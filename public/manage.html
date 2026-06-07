@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard — Snapie Auth</title>
+  <link rel="stylesheet" href="/style.css" />
+  <style>
+    .page { padding: 48px 0 80px; position: relative; z-index: 1; }
+    .page-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 36px;
+    }
+    .page-header h1 { font-size: 1.5rem; }
+
+    /* State panels */
+    .state-panel { display: none; }
+    .state-panel.active { display: block; }
+
+    /* Account info row */
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .info-tile {
+      background: rgba(11, 26, 44, 0.6);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+    }
+    .info-tile-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-3); margin-bottom: 6px; }
+    .info-tile-value { font-size: 1.1rem; font-weight: 600; color: var(--text); }
+
+    /* Username check */
+    .username-row {
+      display: flex;
+      gap: 10px;
+    }
+    .username-row input { flex: 1; }
+
+    /* Steps */
+    .step-indicator {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      margin-bottom: 32px;
+    }
+    .step {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.78rem;
+      color: var(--text-3);
+    }
+    .step.active { color: var(--primary); }
+    .step.done { color: var(--success); }
+    .step-num {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      border: 1px solid currentColor;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.7rem;
+      font-weight: 600;
+    }
+    .step-line { flex: 1; height: 1px; background: var(--border); margin: 0 10px; }
+
+    /* Actions row */
+    .actions-row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    /* Emancipation warning */
+    .emancipation-warning {
+      background: rgba(255, 77, 109, 0.06);
+      border: 1px solid rgba(255, 77, 109, 0.25);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+    .emancipation-warning h3 {
+      color: var(--danger);
+      font-size: 0.9rem;
+      margin-bottom: 10px;
+    }
+
+    /* Keys display */
+    #keys-display { display: none; }
+    .keys-warning {
+      background: rgba(250, 204, 21, 0.06);
+      border: 1px solid rgba(250, 204, 21, 0.25);
+      border-radius: var(--radius);
+      padding: 14px 18px;
+      font-size: 0.82rem;
+      color: rgb(250, 204, 21);
+      margin-bottom: 20px;
+    }
+
+    /* Tabs for creating */
+    .mode-tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 24px;
+      background: rgba(0,0,0,0.2);
+      border-radius: var(--radius);
+      padding: 4px;
+    }
+    .mode-tab {
+      flex: 1;
+      text-align: center;
+      padding: 9px 12px;
+      font-size: 0.8rem;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: var(--transition);
+      color: var(--text-2);
+      background: none;
+      border: none;
+      font-family: var(--font-body);
+    }
+    .mode-tab.active {
+      background: var(--primary-dim);
+      color: var(--primary);
+      border: 1px solid var(--border-lit);
+    }
+
+    /* Link challenge */
+    #challenge-box {
+      display: none;
+      background: rgba(0,0,0,0.4);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      font-size: 0.8rem;
+      word-break: break-all;
+      color: var(--accent);
+      margin-bottom: 16px;
+    }
+
+    /* Polling status */
+    .poll-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 0;
+      color: var(--text-2);
+      font-size: 0.84rem;
+    }
+
+    /* Section heading */
+    .section-heading {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--text-3);
+      margin-bottom: 16px;
+    }
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="/" class="wordmark"><span class="dot"></span>SNAPIE AUTH</a>
+      <div class="nav-user">
+        <img src="" alt="" id="nav-avatar" class="avatar" style="display:none" />
+        <span id="nav-name" class="text-sm text-muted"></span>
+        <button class="btn btn-ghost btn-sm" id="logout-btn">Sign out</button>
+      </div>
+    </div>
+  </nav>
+
+  <div class="page">
+    <div class="container-sm">
+      <div id="loading-state" class="state-panel active text-center mt-8">
+        <div class="spinner" style="width:32px;height:32px;border-width:3px;margin:0 auto;"></div>
+        <p class="text-muted mt-4 text-sm">Loading your account…</p>
+      </div>
+
+      <!-- STATE: No Hive account yet -->
+      <div id="state-no-account" class="state-panel">
+        <div class="page-header">
+          <h1>Account Setup</h1>
+          <span id="eligibility-badge" class="badge badge-gray">Checking…</span>
+        </div>
+        <div id="main-alert"></div>
+
+        <div class="mode-tabs" id="setup-mode-tabs">
+          <button class="mode-tab active" data-mode="create">Create Hive Account</button>
+          <button class="mode-tab" data-mode="link">Link Existing Account</button>
+        </div>
+
+        <!-- CREATE FLOW -->
+        <div id="create-panel">
+          <div class="card mb-6">
+            <p class="section-heading">Choose account type</p>
+            <div class="mode-tabs">
+              <button class="mode-tab active" data-custody="custodial">Custodial (Recommended)</button>
+              <button class="mode-tab" data-custody="emancipated">Self-Custody</button>
+            </div>
+
+            <div id="custody-info-custodial" class="alert alert-info" style="margin-bottom:0;">
+              Snapie generates and stores your keys securely. No setup required. You can export your keys anytime.
+            </div>
+            <div id="custody-info-emancipated" class="alert alert-info hidden" style="margin-bottom:0;">
+              Provide your own Hive public keys. You must hold the corresponding private keys. Snapie never sees them.
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="form-group">
+              <label>Hive Username</label>
+              <div class="username-row">
+                <input type="text" id="username-input" placeholder="e.g. alice.hive" autocomplete="off" />
+                <button class="btn btn-outline btn-sm" id="check-btn">Check</button>
+              </div>
+              <div class="input-hint" id="username-hint"></div>
+            </div>
+
+            <!-- Emancipated: public keys form -->
+            <div id="pubkeys-form" class="hidden">
+              <div class="form-group">
+                <label>Owner Public Key</label>
+                <input type="text" id="pub-owner" placeholder="STM..." />
+              </div>
+              <div class="form-group">
+                <label>Active Public Key</label>
+                <input type="text" id="pub-active" placeholder="STM..." />
+              </div>
+              <div class="form-group">
+                <label>Posting Public Key</label>
+                <input type="text" id="pub-posting" placeholder="STM..." />
+              </div>
+              <div class="form-group">
+                <label>Memo Public Key</label>
+                <input type="text" id="pub-memo" placeholder="STM..." />
+              </div>
+            </div>
+
+            <button class="btn btn-primary btn-full" id="create-btn" disabled>
+              Create Account
+            </button>
+          </div>
+
+          <!-- Polling state after creation -->
+          <div id="polling-card" class="card mt-4 hidden">
+            <p class="section-heading">Creating your account</p>
+            <div class="poll-row">
+              <div class="spinner"></div>
+              <span id="poll-status-text">Broadcasting transaction…</span>
+            </div>
+            <div class="status-row">
+              <span class="status-key">Username</span>
+              <span class="status-val" id="poll-username">—</span>
+            </div>
+            <div class="status-row">
+              <span class="status-key">Job ID</span>
+              <span class="status-val text-dim text-xs" id="poll-job-id">—</span>
+            </div>
+          </div>
+
+          <!-- Keys display (custodial, first-time) -->
+          <div id="keys-display" class="card mt-4">
+            <p class="section-heading">Your Private Keys</p>
+            <div class="keys-warning">
+              Save these now — they will not be shown again unless you emancipate.
+            </div>
+            <div id="keys-container"></div>
+            <button class="btn btn-primary btn-full mt-4" id="keys-done-btn">
+              I've saved my keys — Continue
+            </button>
+          </div>
+        </div>
+
+        <!-- LINK FLOW -->
+        <div id="link-panel" class="hidden">
+          <div class="card">
+            <div class="form-group">
+              <label>Your Hive Username</label>
+              <div class="username-row">
+                <input type="text" id="link-username-input" placeholder="yourhiveaccount" autocomplete="off" />
+                <button class="btn btn-outline btn-sm" id="get-challenge-btn">Get Challenge</button>
+              </div>
+            </div>
+
+            <div id="challenge-box"></div>
+
+            <div id="link-sign-section" class="hidden">
+              <div class="alert alert-info">
+                Sign the challenge above with Hive Keychain or any wallet, then paste the signature below.
+                <br/><br/>
+                <strong>Keychain:</strong> Use "Request Posting Key Sign" with the message above.
+              </div>
+              <div class="form-group">
+                <label>Signature</label>
+                <input type="text" id="link-signature" placeholder="hex signature…" />
+              </div>
+              <button class="btn btn-primary btn-full" id="link-confirm-btn">Link Account</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STATE: Account active, custodial -->
+      <div id="state-custodial" class="state-panel">
+        <div class="page-header">
+          <h1>Your Hive Account</h1>
+          <span class="badge badge-blue">Custodial</span>
+        </div>
+        <div id="custodial-alert"></div>
+
+        <div class="info-grid">
+          <div class="info-tile">
+            <div class="info-tile-label">Username</div>
+            <div class="info-tile-value" id="custodial-username">—</div>
+          </div>
+          <div class="info-tile">
+            <div class="info-tile-label">Account Value</div>
+            <div class="info-tile-value" id="custodial-value">—</div>
+          </div>
+        </div>
+
+        <div class="card mb-4">
+          <p class="section-heading">Account Details</p>
+          <div class="status-row">
+            <span class="status-key">Provider</span>
+            <span class="status-val" id="custodial-provider">—</span>
+          </div>
+          <div class="status-row">
+            <span class="status-key">Custody Mode</span>
+            <span class="status-val">Custodial — Snapie holds keys</span>
+          </div>
+          <div class="status-row">
+            <span class="status-key">Signing Proxy</span>
+            <span class="status-val text-success">Active</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <p class="section-heading">Actions</p>
+          <div class="actions-row">
+            <button class="btn btn-outline" id="go-emancipate-btn">Export Keys</button>
+            <button class="btn btn-ghost" id="custodial-refresh-btn">Refresh Value</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- STATE: Emancipation required -->
+      <div id="state-emancipation-required" class="state-panel">
+        <div class="page-header">
+          <h1>Action Required</h1>
+          <span class="badge badge-red">Keys Required</span>
+        </div>
+
+        <div class="emancipation-warning">
+          <h3>Your account has exceeded the custodial threshold</h3>
+          <p class="text-sm" id="emancreq-reason">Your account value has grown. To continue using Snapie, you must export your private keys and take full custody of your account.</p>
+        </div>
+
+        <div class="card">
+          <p class="text-sm text-muted mb-6">
+            Exporting your keys is permanent. Once exported, Snapie will no longer hold your keys. You'll need a Hive wallet (Keychain, etc.) to sign transactions.
+          </p>
+          <button class="btn btn-danger btn-full" id="start-emancipate-btn">Export My Keys Now</button>
+        </div>
+      </div>
+
+      <!-- STATE: Emancipated (linked account or exported keys) -->
+      <div id="state-emancipated" class="state-panel">
+        <div class="page-header">
+          <h1>Your Hive Account</h1>
+          <span class="badge badge-green">Self-Custody</span>
+        </div>
+
+        <div class="info-grid">
+          <div class="info-tile">
+            <div class="info-tile-label">Username</div>
+            <div class="info-tile-value" id="emancipated-username">—</div>
+          </div>
+          <div class="info-tile">
+            <div class="info-tile-label">Status</div>
+            <div class="info-tile-value text-success" style="font-size:0.9rem;">Self-Custody</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <p class="section-heading">Signing Status</p>
+          <div class="status-row">
+            <span class="status-key">Posting Auth</span>
+            <span class="status-val text-success">✓ Snapie has posting authority</span>
+          </div>
+          <div class="status-row">
+            <span class="status-key">Active Auth</span>
+            <span class="status-val text-muted">You sign active-level ops</span>
+          </div>
+          <div class="status-row">
+            <span class="status-key">Owner Auth</span>
+            <span class="status-val text-muted">You hold full control</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- EMANCIPATION FLOW (overlay card) -->
+      <div id="state-emancipate" class="state-panel">
+        <div class="page-header">
+          <h1>Export Private Keys</h1>
+          <button class="btn btn-ghost btn-sm" id="emancipate-back-btn">← Back</button>
+        </div>
+
+        <div id="emancipate-alert"></div>
+
+        <div class="card mb-4">
+          <p class="text-sm text-muted mb-6">
+            Snapie will decrypt your private keys and return them to you. Your keys will be permanently deleted from our servers.
+            This action cannot be undone.
+          </p>
+          <button class="btn btn-danger btn-full" id="emancipate-confirm-btn">
+            Decrypt and Export My Keys
+          </button>
+        </div>
+
+        <div id="emancipate-keys-display" class="card hidden">
+          <p class="section-heading">Your Private Keys</p>
+          <div class="keys-warning">
+            Copy and store these securely. They will NOT be shown again.
+          </div>
+          <div id="emancipate-keys-container"></div>
+          <div class="alert alert-success mt-4" style="margin-bottom:0;">
+            Keys exported successfully. Snapie has deleted its copy. You are now in full control.
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <footer class="footer">
+    <div>SNAPIE AUTH · <a href="/docs.html">API Docs</a> · <a href="/llms.txt">llms.txt</a></div>
+  </footer>
+
+  <script type="module">
+    import { api, checkAuth, showAlert, setLoading, copyToClipboard } from '/auth.js'
+
+    let currentUser = null
+    let selectedCustody = 'custodial'
+    let pollInterval = null
+    let challengeText = null
+
+    // ── Helpers ─────────────────────────────────────────────────────
+    function showState(id) {
+      document.querySelectorAll('.state-panel').forEach(p => p.classList.remove('active'))
+      const panel = document.getElementById(id)
+      if (panel) panel.classList.add('active')
+    }
+
+    function renderKeyBlock(container, label, value) {
+      const div = document.createElement('div')
+      div.className = 'key-block'
+      div.innerHTML = `
+        <div class="key-label">${label}</div>
+        <div class="key-value">${value}</div>
+        <button class="copy-btn">Copy</button>
+      `
+      div.querySelector('.copy-btn').addEventListener('click', e => copyToClipboard(value, e.target))
+      container.appendChild(div)
+    }
+
+    function formatUsd(n) {
+      if (n === undefined || n === null) return '—'
+      return '$' + Number(n).toFixed(2)
+    }
+
+    // ── Auth / init ──────────────────────────────────────────────────
+    async function handleGoogleCallback() {
+      const hash = window.location.hash
+      if (!hash || !hash.includes('id_token=')) return false
+      const params = new URLSearchParams(hash.slice(1))
+      const idToken = params.get('id_token')
+      if (!idToken) return false
+      window.history.replaceState({}, '', '/manage.html')
+      try {
+        await api('POST', '/auth/google', { idToken })
+        return true
+      } catch (err) {
+        showAlert(document.getElementById('main-alert') || document.body, err.data?.error || 'Google login failed.', 'danger')
+        return false
+      }
+    }
+
+    async function init() {
+      await handleGoogleCallback()
+
+      const result = await checkAuth()
+      if (!result?.user) {
+        window.location.href = '/'
+        return
+      }
+
+      currentUser = result.user
+
+      // Nav
+      const navAvatar = document.getElementById('nav-avatar')
+      if (currentUser.picture) {
+        navAvatar.src = currentUser.picture
+        navAvatar.style.display = 'block'
+      }
+      document.getElementById('nav-name').textContent = currentUser.name || ''
+
+      // Route to correct state
+      if (result.emancipationRequired) {
+        document.getElementById('emancreq-reason').textContent =
+          `Your account value ($${result.accountValue?.totalUsd?.toFixed(2) || '?'}) has reached the self-custody threshold. Please export your keys to continue.`
+        showState('state-emancipation-required')
+      } else if (!currentUser.hiveUsername) {
+        checkEligibility()
+        showState('state-no-account')
+      } else if (currentUser.custodyMode === 'custodial') {
+        loadCustodialState()
+        showState('state-custodial')
+      } else {
+        loadEmancipatedState()
+        showState('state-emancipated')
+      }
+    }
+
+    // ── Eligibility ──────────────────────────────────────────────────
+    async function checkEligibility() {
+      const badge = document.getElementById('eligibility-badge')
+      try {
+        const data = await api('GET', '/account/eligibility')
+        if (data.canCreate) {
+          badge.textContent = data.sponsored ? 'Sponsored' : 'Eligible'
+          badge.className = 'badge badge-green'
+          document.getElementById('create-btn').disabled = false
+        } else {
+          badge.textContent = data.reason || 'Not Eligible'
+          badge.className = 'badge badge-red'
+          document.getElementById('create-btn').disabled = true
+          showAlert(document.getElementById('main-alert'), data.reason || 'Not eligible for a free account.', 'danger')
+        }
+      } catch {
+        badge.textContent = 'Error'
+        badge.className = 'badge badge-red'
+      }
+    }
+
+    // ── Setup tabs (create vs link) ──────────────────────────────────
+    document.querySelectorAll('#setup-mode-tabs .mode-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('#setup-mode-tabs .mode-tab').forEach(t => t.classList.remove('active'))
+        tab.classList.add('active')
+        const mode = tab.dataset.mode
+        document.getElementById('create-panel').classList.toggle('hidden', mode !== 'create')
+        document.getElementById('link-panel').classList.toggle('hidden', mode !== 'link')
+      })
+    })
+    document.getElementById('link-panel').classList.add('hidden')
+
+    // ── Custody mode selection ───────────────────────────────────────
+    document.querySelectorAll('[data-custody]').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('[data-custody]').forEach(t => t.classList.remove('active'))
+        tab.classList.add('active')
+        selectedCustody = tab.dataset.custody
+        document.getElementById('custody-info-custodial').classList.toggle('hidden', selectedCustody !== 'custodial')
+        document.getElementById('custody-info-emancipated').classList.toggle('hidden', selectedCustody !== 'emancipated')
+        document.getElementById('pubkeys-form').classList.toggle('hidden', selectedCustody !== 'emancipated')
+      })
+    })
+
+    // ── Username check ───────────────────────────────────────────────
+    let checkTimeout
+    document.getElementById('username-input').addEventListener('input', e => {
+      clearTimeout(checkTimeout)
+      const hint = document.getElementById('username-hint')
+      const val = e.target.value.trim()
+      if (!val) { hint.textContent = ''; hint.className = 'input-hint'; return }
+      hint.textContent = 'Checking…'; hint.className = 'input-hint'
+      checkTimeout = setTimeout(() => checkUsername(val), 500)
+    })
+
+    document.getElementById('check-btn').addEventListener('click', () => {
+      const val = document.getElementById('username-input').value.trim()
+      if (val) checkUsername(val)
+    })
+
+    async function checkUsername(username) {
+      const hint = document.getElementById('username-hint')
+      const input = document.getElementById('username-input')
+      try {
+        const data = await api('GET', `/account/check-username/${encodeURIComponent(username)}`)
+        if (data.available) {
+          hint.textContent = '✓ Available'
+          hint.className = 'input-hint ok'
+          input.className = 'input-valid'
+        } else {
+          hint.textContent = data.reason || 'Not available'
+          hint.className = 'input-hint error'
+          input.className = 'input-invalid'
+        }
+      } catch {
+        hint.textContent = 'Check failed'
+        hint.className = 'input-hint error'
+      }
+    }
+
+    // ── Create account ───────────────────────────────────────────────
+    document.getElementById('create-btn').addEventListener('click', async () => {
+      const btn = document.getElementById('create-btn')
+      const username = document.getElementById('username-input').value.trim()
+      if (!username) return
+
+      const body = { username, custodyMode: selectedCustody }
+      if (selectedCustody === 'emancipated') {
+        body.ownerPub = document.getElementById('pub-owner').value.trim()
+        body.activePub = document.getElementById('pub-active').value.trim()
+        body.postingPub = document.getElementById('pub-posting').value.trim()
+        body.memoPub = document.getElementById('pub-memo').value.trim()
+      }
+
+      setLoading(btn, true)
+      try {
+        const data = await api('POST', '/account/create', body)
+        startPolling(data.jobId, username, data.sponsored)
+      } catch (err) {
+        showAlert(document.getElementById('main-alert'), err.data?.error || 'Failed to create account.', 'danger')
+        setLoading(btn, false)
+      }
+    })
+
+    function startPolling(jobId, username, sponsored) {
+      document.getElementById('polling-card').classList.remove('hidden')
+      document.getElementById('create-btn').closest('.card').style.display = 'none'
+      document.getElementById('poll-username').textContent = username
+      document.getElementById('poll-job-id').textContent = jobId
+      if (sponsored) {
+        showAlert(document.getElementById('main-alert'), 'Your sponsored account creation has started!', 'info')
+      }
+
+      const statusTexts = {
+        pending: 'Waiting to broadcast…',
+        broadcasting: 'Broadcasting transaction…',
+        acked: 'Confirming on-chain…',
+        confirmed: 'Confirmed!'
+      }
+
+      pollInterval = setInterval(async () => {
+        try {
+          const data = await api('GET', `/account/job/${jobId}`)
+          document.getElementById('poll-status-text').textContent = statusTexts[data.status] || data.status
+
+          if (data.status === 'confirmed') {
+            clearInterval(pollInterval)
+            // Reload user
+            const me = await checkAuth()
+            if (me?.user) {
+              currentUser = me.user
+              if (selectedCustody === 'custodial' && data.keys) {
+                // Show keys once (provision endpoint with returnKeysOnce)
+                showKeysOnce(data.keys)
+              } else {
+                loadCustodialState()
+                showState('state-custodial')
+              }
+            }
+          } else if (data.status === 'failed' || data.status === 'expired') {
+            clearInterval(pollInterval)
+            document.getElementById('poll-status-text').textContent = `Failed: ${data.error || 'unknown error'}`
+          }
+        } catch { /* silent */ }
+      }, 3000)
+    }
+
+    function showKeysOnce(keys) {
+      const display = document.getElementById('keys-display')
+      const container = document.getElementById('keys-container')
+      container.innerHTML = ''
+      renderKeyBlock(container, 'Owner', keys.owner)
+      renderKeyBlock(container, 'Active', keys.active)
+      renderKeyBlock(container, 'Posting', keys.posting)
+      renderKeyBlock(container, 'Memo', keys.memo)
+      display.style.display = 'block'
+      document.getElementById('polling-card').classList.add('hidden')
+    }
+
+    document.getElementById('keys-done-btn').addEventListener('click', () => {
+      loadCustodialState()
+      showState('state-custodial')
+    })
+
+    // ── Link flow ────────────────────────────────────────────────────
+    document.getElementById('get-challenge-btn').addEventListener('click', async () => {
+      const btn = document.getElementById('get-challenge-btn')
+      const username = document.getElementById('link-username-input').value.trim()
+      if (!username) return
+      setLoading(btn, true)
+      try {
+        const data = await api('POST', '/link/verify-challenge', { hiveUsername: username })
+        challengeText = data.challenge
+        document.getElementById('challenge-box').textContent = data.challenge
+        document.getElementById('challenge-box').style.display = 'block'
+        document.getElementById('link-sign-section').classList.remove('hidden')
+      } catch (err) {
+        showAlert(document.getElementById('main-alert'), err.data?.error || 'Failed to generate challenge.', 'danger')
+      } finally {
+        setLoading(btn, false)
+      }
+    })
+
+    document.getElementById('link-confirm-btn').addEventListener('click', async () => {
+      const btn = document.getElementById('link-confirm-btn')
+      const username = document.getElementById('link-username-input').value.trim()
+      const signature = document.getElementById('link-signature').value.trim()
+      if (!username || !signature || !challengeText) return
+      setLoading(btn, true)
+      try {
+        await api('POST', '/link/confirm', { hiveUsername: username, signature, challenge: challengeText })
+        const me = await checkAuth()
+        if (me?.user) {
+          currentUser = me.user
+          loadEmancipatedState()
+          showState('state-emancipated')
+        }
+      } catch (err) {
+        showAlert(document.getElementById('main-alert'), err.data?.error || 'Link failed. Check your signature.', 'danger')
+        setLoading(btn, false)
+      }
+    })
+
+    // ── Custodial state ──────────────────────────────────────────────
+    async function loadCustodialState() {
+      document.getElementById('custodial-username').textContent = currentUser.hiveUsername || '—'
+      document.getElementById('custodial-provider').textContent = currentUser.provider || '—'
+      try {
+        const data = await api('GET', '/account/value')
+        document.getElementById('custodial-value').textContent = formatUsd(data.totalUsd)
+      } catch {
+        document.getElementById('custodial-value').textContent = '—'
+      }
+    }
+
+    document.getElementById('go-emancipate-btn')?.addEventListener('click', () => showState('state-emancipate'))
+    document.getElementById('start-emancipate-btn')?.addEventListener('click', () => showState('state-emancipate'))
+    document.getElementById('custodial-refresh-btn')?.addEventListener('click', loadCustodialState)
+    document.getElementById('emancipate-back-btn')?.addEventListener('click', () => {
+      currentUser.custodyMode === 'custodial' ? showState('state-custodial') : showState('state-emancipated')
+    })
+
+    // ── Emancipated state ────────────────────────────────────────────
+    function loadEmancipatedState() {
+      document.getElementById('emancipated-username').textContent = currentUser.hiveUsername || '—'
+    }
+
+    // ── Emancipation ─────────────────────────────────────────────────
+    document.getElementById('emancipate-confirm-btn')?.addEventListener('click', async () => {
+      const btn = document.getElementById('emancipate-confirm-btn')
+      setLoading(btn, true)
+      try {
+        const data = await api('POST', '/emancipate/start')
+        const container = document.getElementById('emancipate-keys-container')
+        container.innerHTML = ''
+        if (data.keys) {
+          renderKeyBlock(container, 'Owner', data.keys.owner)
+          renderKeyBlock(container, 'Active', data.keys.active)
+          renderKeyBlock(container, 'Posting', data.keys.posting)
+          renderKeyBlock(container, 'Memo', data.keys.memo)
+        }
+        document.getElementById('emancipate-keys-display').classList.remove('hidden')
+        btn.closest('.card').style.display = 'none'
+      } catch (err) {
+        showAlert(document.getElementById('emancipate-alert'), err.data?.error || 'Failed to export keys.', 'danger')
+        setLoading(btn, false)
+      }
+    })
+
+    // ── Logout ───────────────────────────────────────────────────────
+    document.getElementById('logout-btn').addEventListener('click', async () => {
+      await api('POST', '/auth/logout').catch(() => {})
+      window.location.href = '/'
+    })
+
+    init()
+  </script>
+</body>
+</html>

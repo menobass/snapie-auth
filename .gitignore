@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Environment — copy .env.example and fill in values
+.env
+.env.local
+.env.*.local
+
+# JWT keypair — generate with scripts/gen-keys.sh
+keys/*.pem
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo

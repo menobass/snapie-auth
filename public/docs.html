@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>API Reference — Snapie Auth</title>
+  <link rel="stylesheet" href="/style.css" />
+  <style>
+    .docs-layout {
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      gap: 0;
+      min-height: calc(100vh - 65px);
+      position: relative;
+      z-index: 1;
+    }
+    .sidebar {
+      position: sticky;
+      top: 65px;
+      height: calc(100vh - 65px);
+      overflow-y: auto;
+      padding: 28px 20px;
+      border-right: 1px solid var(--border);
+      background: rgba(6, 17, 31, 0.8);
+      backdrop-filter: blur(16px);
+    }
+    .sidebar h3 {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: var(--text-3);
+      margin: 20px 0 8px;
+    }
+    .sidebar h3:first-child { margin-top: 0; }
+    .sidebar a {
+      display: block;
+      padding: 5px 8px;
+      font-size: 0.8rem;
+      color: var(--text-2);
+      border-radius: 6px;
+      transition: var(--transition);
+      border-left: 2px solid transparent;
+    }
+    .sidebar a:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+    .sidebar a.active { color: var(--primary); border-left-color: var(--primary); background: var(--primary-dim); }
+
+    .docs-main {
+      padding: 40px 48px 80px;
+      max-width: 860px;
+    }
+    .docs-main h1 { font-size: 2rem; margin-bottom: 12px; }
+    .docs-main h2 {
+      font-size: 1.1rem;
+      margin: 48px 0 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+      scroll-margin-top: 80px;
+    }
+    .docs-main h3 { font-size: 0.92rem; margin: 28px 0 10px; }
+    .docs-main p { font-size: 0.88rem; color: var(--text-2); line-height: 1.75; margin-bottom: 14px; }
+
+    .endpoint {
+      background: var(--bg-card);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 22px 24px;
+      margin-bottom: 20px;
+    }
+    .endpoint:hover { border-color: var(--border-lit); }
+    .endpoint-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+      font-size: 0.88rem;
+    }
+    .endpoint-path { color: var(--text); font-weight: 500; }
+    .endpoint p { margin-bottom: 8px; }
+    .endpoint table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin: 10px 0; }
+    .endpoint th { text-align: left; color: var(--text-3); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; padding: 6px 8px; border-bottom: 1px solid var(--border); font-weight: 400; }
+    .endpoint td { padding: 7px 8px; color: var(--text-2); border-bottom: 1px solid rgba(23,58,92,0.4); vertical-align: top; }
+    .endpoint td:first-child { color: var(--accent); font-size: 0.75rem; white-space: nowrap; }
+    .endpoint td code { color: var(--text-2); }
+
+    .auth-badge {
+      display: inline-block;
+      font-size: 0.65rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 2px 7px;
+      border-radius: 4px;
+    }
+    .auth-session { background: var(--primary-dim); color: var(--primary); }
+    .auth-csrf { background: rgba(250, 204, 21, 0.1); color: rgb(250, 204, 21); }
+    .auth-internal { background: rgba(139, 92, 246, 0.12); color: rgb(167, 139, 250); }
+    .auth-admin { background: rgba(251, 146, 60, 0.12); color: rgb(251, 146, 60); }
+    .auth-none { background: rgba(74, 222, 128, 0.1); color: var(--success); }
+
+    .intro-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .intro-tile {
+      background: rgba(11, 26, 44, 0.5);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      font-size: 0.82rem;
+    }
+    .intro-tile strong { display: block; color: var(--text); margin-bottom: 4px; font-family: var(--font-brand); font-size: 0.78rem; letter-spacing: 0.04em; }
+
+    @media (max-width: 720px) {
+      .docs-layout { grid-template-columns: 1fr; }
+      .sidebar { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--border); }
+      .docs-main { padding: 24px 20px 60px; }
+      .intro-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="/" class="wordmark"><span class="dot"></span>SNAPIE AUTH</a>
+      <ul class="nav-links">
+        <li><a href="/docs.html" style="color:var(--primary)">Docs</a></li>
+        <li><a href="/manage.html">Dashboard</a></li>
+        <li><a href="/llms.txt">llms.txt</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <div class="docs-layout">
+    <aside class="sidebar">
+      <h3>Overview</h3>
+      <a href="#overview" class="active">Introduction</a>
+      <a href="#auth-cookies">Auth & Cookies</a>
+      <a href="#errors">Error Codes</a>
+
+      <h3>Authentication</h3>
+      <a href="#auth-google">Google OAuth</a>
+      <a href="#auth-email">Email / Password</a>
+      <a href="#auth-me">Session</a>
+
+      <h3>Account</h3>
+      <a href="#account-eligibility">Eligibility</a>
+      <a href="#account-check">Check Username</a>
+      <a href="#account-create">Create Account</a>
+      <a href="#account-job">Job Status</a>
+      <a href="#account-value">Account Value</a>
+
+      <h3>Linking</h3>
+      <a href="#link-challenge">Challenge</a>
+      <a href="#link-confirm">Confirm Link</a>
+
+      <h3>Hive Signing</h3>
+      <a href="#hive-broadcast">Broadcast</a>
+      <a href="#hive-transfer">Transfer</a>
+      <a href="#hive-power">Power Up/Down</a>
+      <a href="#hive-delegate">Delegate</a>
+
+      <h3>Emancipation</h3>
+      <a href="#emancipate-status">Status</a>
+      <a href="#emancipate-start">Export Keys</a>
+
+      <h3>Internal API</h3>
+      <a href="#internal-provision">Provision Account</a>
+      <a href="#internal-job">Job Status</a>
+      <a href="#internal-sponsor">Issue Token</a>
+
+      <h3>Admin</h3>
+      <a href="#admin-stats">Stats</a>
+      <a href="#admin-jobs">Jobs</a>
+      <a href="#admin-tokens">Sponsor Tokens</a>
+    </aside>
+
+    <main class="docs-main">
+      <h1>Snapie Auth API</h1>
+      <p>A purpose-built Hive account gateway and signing proxy. Authenticates users via Google or email, creates custodial Hive accounts, and signs blockchain operations on their behalf.</p>
+
+      <div class="intro-grid">
+        <div class="intro-tile"><strong>Base URL</strong>https://auth.snapie.io/api</div>
+        <div class="intro-tile"><strong>Protocol</strong>JSON over HTTPS</div>
+        <div class="intro-tile"><strong>Auth</strong>Session cookie (httpOnly) + CSRF token</div>
+        <div class="intro-tile"><strong>Rate Limits</strong>Varies per endpoint group</div>
+      </div>
+
+      <h2 id="overview">Overview</h2>
+      <p>Snapie Auth bridges Web2 identity (Google, email) to Hive blockchain accounts. It handles the full lifecycle: account creation using pre-claimed tokens (ACTs), custodial key management, Hive operation signing, and voluntary key export (emancipation).</p>
+      <p>External services integrate via the <strong>Internal API</strong> using a shared Bearer token for account provisioning and sponsor token issuance.</p>
+
+      <h2 id="auth-cookies">Auth & Cookies</h2>
+      <p>Sessions are stored in two cookies:</p>
+      <table>
+        <thead><tr><th>Cookie</th><th>Purpose</th><th>Flags</th></tr></thead>
+        <tbody>
+          <tr><td><code>snapieauth_session</code></td><td>JWT RS256 session token</td><td>httpOnly, Secure, SameSite=Lax</td></tr>
+          <tr><td><code>snapieauth_csrf</code></td><td>CSRF double-submit token</td><td>Secure, SameSite=Lax (JS-readable)</td></tr>
+        </tbody>
+      </table>
+      <p>All state-mutating requests must include the CSRF token as the <code>x-csrf-token</code> header. Read it from the <code>snapieauth_csrf</code> cookie with JavaScript.</p>
+
+      <h2 id="errors">Error Codes</h2>
+      <pre>{ "error": "error_code_string" }</pre>
+      <p>Common codes: <code>unauthorized</code>, <code>csrf_invalid</code>, <code>already_has_account</code>, <code>no_acts</code>, <code>invalid_username</code>, <code>emancipation_required</code>, <code>not_custodial</code>.</p>
+
+      <!-- ── AUTH ──────────────────────────────────────────── -->
+      <h2 id="auth-google">POST /auth/google</h2>
+      <div class="endpoint">
+        <div class="endpoint-header">
+          <span class="method method-post">POST</span>
+          <span class="endpoint-path">/auth/google</span>
+          <span class="auth-badge auth-none">Public</span>
+        </div>
+        <p>Sign in or register with a Google ID token. Creates user if first time.</p>
+        <h3>Request</h3>
+        <table><thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+        <tbody><tr><td>idToken</td><td>string</td><td>Google ID token from OAuth popup</td></tr></tbody></table>
+        <h3>Response</h3>
+        <pre>{ "user": { "id": "...", "name": "Alice", "picture": "https://..." } }</pre>
+        <p>Sets <code>snapieauth_session</code> and <code>snapieauth_csrf</code> cookies.</p>
+      </div>
+
+      <h2 id="auth-email">Email / Password</h2>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/auth/email/register</span><span class="auth-badge auth-none">Public</span></div>
+        <table><thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td>name</td><td>string</td><td>Display name</td></tr>
+          <tr><td>email</td><td>string</td><td>Email address (never stored plaintext)</td></tr>
+          <tr><td>password</td><td>string</td><td>Min 8 chars. Hashed with Argon2id.</td></tr>
+        </tbody></table>
+      </div>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/auth/email/login</span><span class="auth-badge auth-none">Public</span></div>
+        <table><thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td>email</td><td>string</td><td>Email address</td></tr>
+          <tr><td>password</td><td>string</td><td>Password</td></tr>
+        </tbody></table>
+      </div>
+
+      <h2 id="auth-me">GET /auth/me</h2>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-get">GET</span><span class="endpoint-path">/auth/me</span><span class="auth-badge auth-session">Session</span></div>
+        <p>Returns the current user and emancipation status.</p>
+        <pre>{
+  "user": {
+    "id": "...",
+    "name": "Alice",
+    "picture": "...",
+    "hiveUsername": "alice",
+    "custodyMode": "custodial",
+    "isAdmin": false
+  },
+  "emancipationRequired": false,
+  "accountValue": { "totalUsd": 3.21 }
+}</pre>
+      </div>
+
+      <!-- ── ACCOUNT ───────────────────────────────────────── -->
+      <h2 id="account-eligibility">GET /account/eligibility</h2>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-get">GET</span><span class="endpoint-path">/account/eligibility</span><span class="auth-badge auth-session">Session</span></div>
+        <p>Check if the current user can create a free Hive account.</p>
+        <pre>{
+  "canCreate": true,
+  "sponsored": true,
+  "actsAvailable": 12,
+  "reason": null
+}</pre>
+        <p><code>sponsored: true</code> means a sponsor token was found for this email — the account creation fee is waived even for users who previously had an account.</p>
+      </div>
+
+      <h2 id="account-check">GET /account/check-username/:username</h2>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-get">GET</span><span class="endpoint-path">/account/check-username/:username</span><span class="auth-badge auth-session">Session</span></div>
+        <p>Check if a Hive username is available. 40 req/min rate limit.</p>
+        <pre>{ "available": true }
+{ "available": false, "reason": "already_taken" }</pre>
+      </div>
+
+      <h2 id="account-create">POST /account/create</h2>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/account/create</span><span class="auth-badge auth-session">Session</span><span class="auth-badge auth-csrf">CSRF</span></div>
+        <p>Create a new Hive account. 5 req/hr rate limit.</p>
+        <table><thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td>username</td><td>string</td><td>Desired Hive username (3-16 chars)</td></tr>
+          <tr><td>custodyMode</td><td>string</td><td><code>"custodial"</code> or <code>"emancipated"</code></td></tr>
+          <tr><td>ownerPub</td><td>string?</td><td>Required if emancipated. STM… public key.</td></tr>
+          <tr><td>activePub</td><td>string?</td><td>Required if emancipated.</td></tr>
+          <tr><td>postingPub</td><td>string?</td><td>Required if emancipated.</td></tr>
+          <tr><td>memoPub</td><td>string?</td><td>Required if emancipated.</td></tr>
+        </tbody></table>
+        <p>For <code>custodial</code> mode, Snapie generates all keypairs server-side. No pubkeys needed.</p>
+        <pre>{ "jobId": "...", "sponsored": false }</pre>
+      </div>
+
+      <h2 id="account-job">GET /account/job/:jobId</h2>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-get">GET</span><span class="endpoint-path">/account/job/:jobId</span><span class="auth-badge auth-session">Session</span></div>
+        <p>Poll job status. Statuses: <code>pending → broadcasting → acked → confirmed</code> (or <code>failed</code>/<code>expired</code>).</p>
+        <pre>{
+  "jobId": "...",
+  "username": "alice",
+  "status": "confirmed",
+  "txId": "abc123...",
+  "error": null
+}</pre>
+      </div>
+
+      <h2 id="account-value">GET /account/value</h2>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-get">GET</span><span class="endpoint-path">/account/value</span><span class="auth-badge auth-session">Session</span></div>
+        <pre>{ "hive": 1.2, "hbd": 0.5, "hp": 4.8, "totalUsd": 6.5 }</pre>
+      </div>
+
+      <!-- ── LINK ──────────────────────────────────────────── -->
+      <h2 id="link-challenge">POST /link/verify-challenge</h2>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/link/verify-challenge</span><span class="auth-badge auth-session">Session</span><span class="auth-badge auth-csrf">CSRF</span></div>
+        <p>Get a challenge string to sign with your Hive posting key. Challenge expires in 5 minutes.</p>
+        <table><thead><tr><th>Field</th><th>Type</th></tr></thead>
+        <tbody><tr><td>hiveUsername</td><td>string</td></tr></tbody></table>
+        <pre>{ "challenge": "snapie-auth:link:1717700000:a3f9..." }</pre>
+      </div>
+
+      <h2 id="link-confirm">POST /link/confirm</h2>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/link/confirm</span><span class="auth-badge auth-session">Session</span><span class="auth-badge auth-csrf">CSRF</span></div>
+        <p>Verify signature and link the Hive account. Snapie must already have posting authority on the Hive account.</p>
+        <table><thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td>hiveUsername</td><td>string</td><td></td></tr>
+          <tr><td>challenge</td><td>string</td><td>The challenge from verify-challenge</td></tr>
+          <tr><td>signature</td><td>string</td><td>Hex signature from Hive posting key</td></tr>
+        </tbody></table>
+        <pre>{ "ok": true, "hiveUsername": "alice" }</pre>
+      </div>
+
+      <!-- ── HIVE ──────────────────────────────────────────── -->
+      <h2 id="hive-broadcast">POST /hive/broadcast</h2>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/hive/broadcast</span><span class="auth-badge auth-session">Session</span><span class="auth-badge auth-csrf">CSRF</span></div>
+        <p>Sign and broadcast a posting-level Hive operation. Allowed ops: <code>vote, comment, delete_comment, custom_json, claim_reward_balance</code>. 60 req/min.</p>
+        <table><thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td>opType</td><td>string</td><td>One of the allowed op types</td></tr>
+          <tr><td>opData</td><td>object</td><td>Op payload (author/permlink etc.)</td></tr>
+        </tbody></table>
+        <p>Custodial: signed and broadcast by server. Emancipated: returns <code>{ needsClientSigning: true, unsignedOp }</code>.</p>
+        <pre>{ "txId": "abc123..." }
+// or
+{ "needsClientSigning": true, "unsignedOp": [...] }</pre>
+      </div>
+
+      <h2 id="hive-transfer">POST /hive/transfer</h2>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/hive/transfer</span><span class="auth-badge auth-session">Session</span><span class="auth-badge auth-csrf">CSRF</span></div>
+        <p>Transfer HIVE or HBD. Active-level op. 10 req/min.</p>
+        <table><thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td>to</td><td>string</td><td>Recipient Hive username</td></tr>
+          <tr><td>amount</td><td>string</td><td>e.g. "1.000 HIVE"</td></tr>
+          <tr><td>memo</td><td>string?</td><td>Optional memo</td></tr>
+        </tbody></table>
+      </div>
+
+      <h2 id="hive-power">Power Up / Down</h2>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/hive/power-up</span><span class="auth-badge auth-session">Session</span><span class="auth-badge auth-csrf">CSRF</span></div>
+        <table><thead><tr><th>Field</th><th>Type</th></tr></thead>
+        <tbody><tr><td>amount</td><td>string — e.g. "10.000 HIVE"</td></tr></tbody></table>
+      </div>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/hive/power-down</span><span class="auth-badge auth-session">Session</span><span class="auth-badge auth-csrf">CSRF</span></div>
+        <table><thead><tr><th>Field</th><th>Type</th></tr></thead>
+        <tbody><tr><td>amount</td><td>string — VESTS to withdraw</td></tr></tbody></table>
+      </div>
+
+      <h2 id="hive-delegate">POST /hive/delegate</h2>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/hive/delegate</span><span class="auth-badge auth-session">Session</span><span class="auth-badge auth-csrf">CSRF</span></div>
+        <table><thead><tr><th>Field</th><th>Type</th></tr></thead>
+        <tbody>
+          <tr><td>delegatee</td><td>string — recipient username</td></tr>
+          <tr><td>amount</td><td>string — VESTS e.g. "1000000000 VESTS"</td></tr>
+        </tbody></table>
+      </div>
+
+      <!-- ── EMANCIPATE ────────────────────────────────────── -->
+      <h2 id="emancipate-status">GET /emancipate/status</h2>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-get">GET</span><span class="endpoint-path">/emancipate/status</span><span class="auth-badge auth-session">Session</span></div>
+        <pre>{
+  "custodyMode": "custodial",
+  "totalUsd": 3.4,
+  "thresholdUsd": 10,
+  "emancipationRequired": false
+}</pre>
+      </div>
+
+      <h2 id="emancipate-start">POST /emancipate/start</h2>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/emancipate/start</span><span class="auth-badge auth-session">Session</span><span class="auth-badge auth-csrf">CSRF</span></div>
+        <p>Decrypt and return all private keys. Deletes encrypted copies from server immediately. Custodial only. 5 req/hr.</p>
+        <pre>{
+  "keys": {
+    "owner": "5J...",
+    "active": "5J...",
+    "posting": "5J...",
+    "memo": "5J..."
+  },
+  "message": "Keys exported. Snapie's copy has been deleted."
+}</pre>
+      </div>
+
+      <!-- ── INTERNAL ───────────────────────────────────────── -->
+      <h2 id="internal-provision">POST /internal/provision-account</h2>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/internal/provision-account</span><span class="auth-badge auth-internal">Internal Bearer</span></div>
+        <p>Create a Hive account without a user session. Used by external services to sell or gift accounts.</p>
+        <table><thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td>username</td><td>string</td><td>Desired Hive username</td></tr>
+          <tr><td>custodyMode</td><td>string</td><td><code>"custodial"</code> or <code>"emancipated"</code></td></tr>
+          <tr><td>ownerPub…</td><td>string?</td><td>Required if emancipated</td></tr>
+          <tr><td>linkedEmail</td><td>string?</td><td>Associate with existing or new user by email</td></tr>
+          <tr><td>returnKeysOnce</td><td>boolean?</td><td>Custodial: return keys on first poll then wipe</td></tr>
+          <tr><td>note</td><td>string?</td><td>Audit note stored with job</td></tr>
+        </tbody></table>
+        <pre>{ "jobId": "...", "userId": "..." }</pre>
+      </div>
+
+      <h2 id="internal-job">GET /internal/jobs/:jobId</h2>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-get">GET</span><span class="endpoint-path">/internal/jobs/:jobId</span><span class="auth-badge auth-internal">Internal Bearer</span></div>
+        <p>Poll a provisioned job. If <code>returnKeysOnce</code> was set and status is <code>confirmed</code>, decrypts and returns keys exactly once then wipes them.</p>
+        <pre>{
+  "jobId": "...",
+  "username": "alice",
+  "status": "confirmed",
+  "txId": "abc123",
+  "keys": { "owner": "5J...", "active": "5J...", "posting": "5J...", "memo": "5J..." }
+}</pre>
+        <p>On second call: <code>{ ...base, "keysAlreadyDelivered": true }</code></p>
+      </div>
+
+      <h2 id="internal-sponsor">POST /internal/issue-sponsor-token</h2>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/internal/issue-sponsor-token</span><span class="auth-badge auth-internal">Internal Bearer</span></div>
+        <p>Issue a one-time sponsor token for an email address. When the user registers with that email and creates a Hive account, the token is consumed and the account creation fee is waived (even for previously-account holders).</p>
+        <table><thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td>email</td><td>string</td><td>Recipient email</td></tr>
+          <tr><td>note</td><td>string?</td><td>e.g. "earned 500 credits"</td></tr>
+          <tr><td>expiresInDays</td><td>number?</td><td>Optional TTL in days</td></tr>
+        </tbody></table>
+        <pre>{ "tokenId": "...", "email": "alice@example.com", "expiresAt": null }</pre>
+      </div>
+
+      <!-- ── ADMIN ──────────────────────────────────────────── -->
+      <h2 id="admin-stats">GET /admin/stats</h2>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-get">GET</span><span class="endpoint-path">/admin/stats</span><span class="auth-badge auth-admin">Admin Session</span></div>
+        <pre>{ "actCount": 14, "pendingJobs": 2, "userCount": 387 }</pre>
+      </div>
+
+      <h2 id="admin-jobs">GET /admin/jobs</h2>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-get">GET</span><span class="endpoint-path">/admin/jobs</span><span class="auth-badge auth-admin">Admin Session</span></div>
+        <p>Last 100 account creation jobs.</p>
+      </div>
+
+      <h2 id="admin-tokens">Sponsor Token Management</h2>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-get">GET</span><span class="endpoint-path">/admin/sponsor-tokens</span><span class="auth-badge auth-admin">Admin Session</span></div>
+        <p>List all sponsor tokens. Pass <code>?includeUsed=false</code> to hide consumed tokens.</p>
+      </div>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/admin/sponsor-tokens</span><span class="auth-badge auth-admin">Admin Session</span><span class="auth-badge auth-csrf">CSRF</span></div>
+        <table><thead><tr><th>Field</th><th>Type</th></tr></thead>
+        <tbody>
+          <tr><td>email</td><td>string</td></tr>
+          <tr><td>note</td><td>string?</td></tr>
+          <tr><td>expiresInDays</td><td>number?</td></tr>
+        </tbody></table>
+      </div>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-delete">DELETE</span><span class="endpoint-path">/admin/sponsor-tokens/:tokenId</span><span class="auth-badge auth-admin">Admin Session</span><span class="auth-badge auth-csrf">CSRF</span></div>
+        <p>Revoke an unused sponsor token.</p>
+      </div>
+
+    </main>
+  </div>
+
+  <script>
+    // Active sidebar link on scroll
+    const headings = document.querySelectorAll('.docs-main h2[id]')
+    const links = document.querySelectorAll('.sidebar a')
+
+    function setActive() {
+      let active = headings[0]
+      headings.forEach(h => {
+        if (h.getBoundingClientRect().top < 100) active = h
+      })
+      links.forEach(l => {
+        l.classList.toggle('active', l.getAttribute('href') === '#' + (active?.id || ''))
+      })
+    }
+
+    window.addEventListener('scroll', setActive, { passive: true })
+    setActive()
+  </script>
+</body>
+</html>

@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Snapie Auth — Hive Account Gateway</title>
+  <link rel="stylesheet" href="/style.css" />
+  <style>
+    .hero {
+      padding: 120px 0 80px;
+      text-align: center;
+    }
+    .hero-label {
+      font-size: 0.72rem;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--primary);
+      margin-bottom: 22px;
+    }
+    .hero h1 {
+      font-size: clamp(2rem, 6vw, 3.8rem);
+      font-weight: 900;
+      background: linear-gradient(135deg, #E8F4FF 0%, #66E4FF 60%, #18A8FF 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 20px;
+      line-height: 1.1;
+    }
+    .hero p {
+      font-size: 1rem;
+      color: var(--text-2);
+      max-width: 520px;
+      margin: 0 auto 48px;
+      line-height: 1.75;
+    }
+    .auth-card {
+      max-width: 400px;
+      margin: 0 auto;
+    }
+    .auth-card h2 {
+      font-size: 1rem;
+      margin-bottom: 24px;
+      text-align: center;
+    }
+    .divider-text {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 20px 0;
+      color: var(--text-3);
+      font-size: 0.75rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .divider-text::before,
+    .divider-text::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+    .google-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      width: 100%;
+      padding: 12px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-family: var(--font-body);
+      font-size: 0.88rem;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+    .google-btn:hover {
+      background: rgba(255,255,255,0.1);
+      border-color: var(--border-lit);
+      transform: translateY(-1px);
+    }
+    .google-btn svg { flex-shrink: 0; }
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 20px;
+      padding: 0 0 80px;
+    }
+    .feature-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: var(--radius);
+      background: var(--primary-dim);
+      border: 1px solid var(--border-lit);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+      margin-bottom: 14px;
+    }
+    .feature-card h3 {
+      font-size: 0.9rem;
+      margin-bottom: 8px;
+      letter-spacing: 0.04em;
+    }
+    .feature-card p {
+      font-size: 0.82rem;
+      color: var(--text-2);
+      line-height: 1.65;
+    }
+    #alert-area { min-height: 0; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    #email-panel { animation: fadein 0.2s ease; }
+    @keyframes fadein { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="/" class="wordmark">
+        <span class="dot"></span>
+        SNAPIE AUTH
+      </a>
+      <ul class="nav-links">
+        <li><a href="/docs.html">Docs</a></li>
+        <li><a href="/manage.html" id="nav-manage" class="hidden">Dashboard</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <div class="hero">
+    <div class="container">
+      <div class="hero-label">Hive Account Gateway</div>
+      <h1>Your Blockchain Identity,<br>Simply Managed</h1>
+      <p>Create a Hive account, sign in with Google, and let Snapie handle the blockchain complexity — no wallet required to get started.</p>
+
+      <div class="auth-card card card-glow">
+        <h2>Sign in or create an account</h2>
+        <div id="alert-area"></div>
+
+        <button class="google-btn" id="google-btn">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <path d="M17.64 9.2a10.3 10.3 0 00-.164-1.841H9v3.48h4.844a4.14 4.14 0 01-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.614z" fill="#4285F4"/>
+            <path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 009 18z" fill="#34A853"/>
+            <path d="M3.964 10.71A5.41 5.41 0 013.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 000 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" fill="#FBBC05"/>
+            <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 00.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z" fill="#EA4335"/>
+          </svg>
+          Continue with Google
+        </button>
+
+        <div class="divider-text">or</div>
+
+        <div class="tabs" style="margin-bottom: 20px;">
+          <button class="tab active" data-tab="login">Sign In</button>
+          <button class="tab" data-tab="register">Register</button>
+        </div>
+
+        <div id="login-panel" class="tab-panel active">
+          <form id="login-form">
+            <div class="form-group">
+              <label>Email</label>
+              <input type="email" id="login-email" autocomplete="email" required />
+            </div>
+            <div class="form-group">
+              <label>Password</label>
+              <input type="password" id="login-password" autocomplete="current-password" required />
+            </div>
+            <button type="submit" class="btn btn-primary btn-full">Sign In</button>
+          </form>
+        </div>
+
+        <div id="register-panel" class="tab-panel">
+          <form id="register-form">
+            <div class="form-group">
+              <label>Name</label>
+              <input type="text" id="reg-name" autocomplete="name" required />
+            </div>
+            <div class="form-group">
+              <label>Email</label>
+              <input type="email" id="reg-email" autocomplete="email" required />
+            </div>
+            <div class="form-group">
+              <label>Password</label>
+              <input type="password" id="reg-password" autocomplete="new-password" minlength="8" required />
+            </div>
+            <button type="submit" class="btn btn-primary btn-full">Create Account</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section" style="padding-top: 0;">
+    <div class="container">
+      <div class="feature-grid">
+        <div class="card feature-card">
+          <div class="feature-icon">🔐</div>
+          <h3>Custodial by Default</h3>
+          <p>We generate and store your Hive keys server-side. No seed phrase to lose. No crypto knowledge required. Emancipate anytime when you're ready.</p>
+        </div>
+        <div class="card feature-card">
+          <div class="feature-icon">⛓️</div>
+          <h3>Real Hive Accounts</h3>
+          <p>Full Hive blockchain accounts created using pre-claimed tokens. Vote, post, and earn HIVE — all through a signing proxy that keeps your keys safe.</p>
+        </div>
+        <div class="card feature-card">
+          <div class="feature-icon">🔗</div>
+          <h3>Link Existing Accounts</h3>
+          <p>Already on Hive? Link your existing account by signing a challenge message. Grant Snapie posting authority and log in with Google.</p>
+        </div>
+        <div class="card feature-card">
+          <div class="feature-icon">🚀</div>
+          <h3>Emancipation Ready</h3>
+          <p>When you want full control, export your private keys in seconds. Snapie wipes its copy immediately — your keys, your chain.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <div>SNAPIE AUTH · <a href="/docs.html">API Docs</a> · <a href="/llms.txt">llms.txt</a></div>
+  </footer>
+
+  <script type="module">
+    import { api, checkAuth, getPublicConfig, showAlert, setLoading } from '/auth.js'
+
+    async function init() {
+      const me = await checkAuth()
+      if (me?.user) {
+        window.location.href = '/manage.html'
+        return
+      }
+      document.getElementById('nav-manage').classList.add('hidden')
+
+      const cfg = await getPublicConfig().catch(() => ({}))
+
+      // Tabs
+      document.querySelectorAll('.tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'))
+          document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'))
+          tab.classList.add('active')
+          document.getElementById(`${tab.dataset.tab}-panel`).classList.add('active')
+        })
+      })
+
+      // Google login
+      document.getElementById('google-btn').addEventListener('click', () => {
+        if (!cfg.googleClientId) {
+          showAlert(document.getElementById('alert-area'), 'Google login not configured.', 'danger')
+          return
+        }
+        const params = new URLSearchParams({
+          client_id: cfg.googleClientId,
+          redirect_uri: window.location.origin + '/manage.html',
+          response_type: 'token id_token',
+          scope: 'openid email profile',
+          nonce: crypto.randomUUID()
+        })
+        window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`
+      })
+
+      // Email login
+      document.getElementById('login-form').addEventListener('submit', async e => {
+        e.preventDefault()
+        const btn = e.target.querySelector('button[type=submit]')
+        setLoading(btn, true)
+        try {
+          await api('POST', '/auth/email/login', {
+            email: document.getElementById('login-email').value,
+            password: document.getElementById('login-password').value
+          })
+          window.location.href = '/manage.html'
+        } catch (err) {
+          showAlert(document.getElementById('alert-area'), err.data?.error || 'Login failed.', 'danger')
+          setLoading(btn, false)
+        }
+      })
+
+      // Email register
+      document.getElementById('register-form').addEventListener('submit', async e => {
+        e.preventDefault()
+        const btn = e.target.querySelector('button[type=submit]')
+        setLoading(btn, true)
+        try {
+          await api('POST', '/auth/email/register', {
+            name: document.getElementById('reg-name').value,
+            email: document.getElementById('reg-email').value,
+            password: document.getElementById('reg-password').value
+          })
+          window.location.href = '/manage.html'
+        } catch (err) {
+          showAlert(document.getElementById('alert-area'), err.data?.error || 'Registration failed.', 'danger')
+          setLoading(btn, false)
+        }
+      })
+    }
+
+    init()
+  </script>
+</body>
+</html>
