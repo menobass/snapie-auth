@@ -22,3 +22,7 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+#internal documents
+/internal-docs/
+
