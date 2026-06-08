@@ -12,6 +12,7 @@ import {
 import { isValidHivePubKey, getAccount } from '../services/hive.js'
 import { getAccountValue, isEmancipationRequired } from '../services/account-value.js'
 import { findValidToken, consumeToken } from '../services/sponsor-tokens.js'
+import { checkFreeQuota, consumeFreeQuota } from '../services/free-quota.js'
 
 const router = Router()
 
@@ -32,6 +33,13 @@ router.get('/eligibility', authMiddleware, asyncMw(async (req, res) => {
 
   if (user.everHadAccount && !sponsorToken) {
     return res.json({ canCreate: false, canLinkExisting: true, reason: 'previously_had_account' })
+  }
+
+  if (!sponsorToken) {
+    const quota = await checkFreeQuota(req.ip)
+    if (!quota.allowed) {
+      return res.json({ canCreate: false, canLinkExisting: true, reason: quota.reason })
+    }
   }
 
   let hasActs = false
@@ -75,6 +83,13 @@ router.post('/create', authMiddleware, csrfMiddleware, asyncMw(async (req, res) 
 
   if (user.everHadAccount && !sponsorToken) {
     return res.status(403).json({ error: 'previously_had_account' })
+  }
+
+  if (!sponsorToken) {
+    const quota = await consumeFreeQuota(req.ip)
+    if (!quota.allowed) {
+      return res.status(429).json({ error: quota.reason })
+    }
   }
 
   const { username, custodyMode, ownerPub, activePub, postingPub, memoPub } = req.body

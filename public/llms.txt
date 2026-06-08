@@ -1,5 +1,5 @@
 # Snapie Auth — LLM Integration Reference
-# Version: 1.0 | Updated: 2026-06-07
+# Version: 1.3 | Updated: 2026-06-08
 # Base URL: https://auth.snapie.io/api
 
 Snapie Auth is a Hive blockchain account gateway and signing proxy.
@@ -26,41 +26,79 @@ The user never sees or holds keys until voluntary emancipation.
 EMANCIPATED: User holds their own keys. Snapie only has posting authority
 (granted by the user). Active-level ops return `{ needsClientSigning: true }`.
 
-SPONSOR TOKEN: A one-time token tied to an email hash. When redeemed,
-waives the ACT requirement for account creation (even for returning users).
-Issued by admins or external apps via the Internal API.
+SPONSOR TOKEN: A one-time token tied to an email hash. When redeemed, it
+bypasses the daily free-account quota (global + per-IP) and the
+"previously had account" restriction. The account still consumes one ACT.
+Issued by admins via /admin.html or the Admin API, or by external apps
+via the Internal API.
 
 EMANCIPATION THRESHOLD: Configurable USD value. When a custodial account
 exceeds this value, the user must export their keys before continuing.
 Set EMANCIPATION_THRESHOLD_USD=0 to disable.
 
+FREE ACCOUNT QUOTA: By default 10 accounts/day globally and 2/IP/day.
+Check remaining slots with GET /quota (public, no auth). Sponsor tokens
+bypass this limit entirely.
+
 ACCOUNT CREATION FLOW:
-1. POST /account/create → returns jobId
-2. Poll GET /account/job/:jobId every 3-5 seconds
-3. Status: pending → broadcasting → acked → confirmed (or failed/expired)
-4. On confirmed: user.hiveUsername is set
+1. Check GET /quota — if remaining > 0, user can proceed (or if sponsored)
+2. POST /account/create → returns jobId
+3. Poll GET /account/job/:jobId every 3-5 seconds
+4. Status: pending → broadcasting → acked → confirmed (or failed/expired)
+5. On confirmed: user.hiveUsername is set
 
 ## Quick Start Integration
 
 ```javascript
-// 1. Google login
+// 1. Check quota before sending users to register
+const quota = await fetch('/api/quota').then(r => r.json())
+// { total: 10, used: 3, remaining: 7, resetsAt: "2026-06-09T00:00:00.000Z" }
+if (quota.remaining === 0) {
+  // show "no slots today — request a sponsor invite or try tomorrow"
+}
+
+// 2. Google login — returns { user: SnapieUser } directly, no extra /auth/me needed
 async function loginWithGoogle(idToken) {
   const res = await fetch('/api/auth/google', {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ idToken })
+    body: JSON.stringify({ credential: idToken })
   })
-  return res.json()
+  const { user } = await res.json()
+  // user.hiveUsername is null until account is created
+  return user
 }
 
-// 2. Read CSRF token
+// Email login works the same way
+async function loginWithEmail(email, password) {
+  const res = await fetch('/api/auth/email/login', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password })
+  })
+  if (res.status === 403) throw new Error('email_not_verified')
+  if (!res.ok) throw new Error((await res.json()).error)
+  const { user } = await res.json()
+  return user
+}
+
+// Call GET /auth/me only when you need email or account value info,
+// or to re-validate an existing session on page load.
+async function getMe() {
+  const res = await fetch('/api/auth/me', { credentials: 'include' })
+  if (!res.ok) return null
+  return (await res.json()).user
+}
+
+// 3. Read CSRF token
 function getCsrf() {
   const m = document.cookie.match(/snapieauth_csrf=([^;]+)/)
   return m ? decodeURIComponent(m[1]) : null
 }
 
-// 3. Authenticated API call
+// 4. Authenticated API call
 async function api(method, path, body) {
   const res = await fetch(`/api${path}`, {
     method,
@@ -74,13 +112,13 @@ async function api(method, path, body) {
   return res.json()
 }
 
-// 4. Create a custodial Hive account
+// 5. Create a custodial Hive account
 const { jobId } = await api('POST', '/account/create', {
   username: 'alice',
   custodyMode: 'custodial'
 })
 
-// 5. Poll until confirmed
+// 6. Poll until confirmed
 let job
 do {
   await new Promise(r => setTimeout(r, 3000))
@@ -107,36 +145,70 @@ Body: { email, note?, expiresInDays? }
 Returns: { tokenId, email, expiresAt }
 
 The token is redeemed automatically when the user registers with that email
-and calls POST /api/account/create. They get a free Hive account even if
-they previously had one.
+and calls POST /api/account/create. They bypass the daily quota and the
+"previously had account" restriction — but one ACT is still consumed.
+
+## SnapieUser Object
+
+Login endpoints (POST /auth/google, POST /auth/email/login) return this directly
+in the response body — no separate GET /auth/me call needed after login:
+
+```
+{
+  id:           string   — MongoDB ObjectId as hex string
+  name:         string|null
+  picture:      string|null  — URL (Google accounts only)
+  hiveUsername: string|null  — null until account is created
+  custodyMode:  "custodial"|"emancipated"|null
+  isAdmin:      boolean
+}
+```
+
+GET /auth/me returns the same shape plus:
+  email:                string|null  — from session JWT (cosmetic, not stored)
+  accountValueUsd:      number|null  — only present when hiveUsername + custodial
+  emancipationRequired: boolean      — only present when above applies
+
+Note: after a fresh login, hiveUsername is null until the user creates a Hive
+account via POST /account/create. Always check hiveUsername before using it.
 
 ## Endpoints Summary
 
 ### Public (no auth)
 GET  /health                    → { ok: true }
-POST /auth/google               → session cookies set
-POST /auth/email/register       → session cookies set
-POST /auth/email/login          → session cookies set
+GET  /quota                     → { total, used, remaining, resetsAt }
+GET  /public-config             → { googleClientId, hiveNetwork }
+POST /auth/google               → session cookies set + { user: SnapieUser }
+POST /auth/email/register       → 202 { pending: true } — sends verification email
+POST /auth/email/login          → session cookies set + { user: SnapieUser }
+POST /auth/email/resend         → 200 { ok: true }
+GET  /auth/email/verify         → redirect to /manage.html (email verification link)
 
 ### Session required (cookie)
-GET  /auth/me                   → user + emancipation status
+GET  /auth/me                   → { user: SnapieUser + email + accountValueUsd? + emancipationRequired? }
 POST /auth/logout               → clears cookies
 
-GET  /account/eligibility       → { canCreate, sponsored, actsAvailable }
+GET  /account/eligibility       → { canCreate, canLinkExisting, reason, sponsored? }
 GET  /account/check-username/:u → { available, reason? }
-POST /account/create            → { jobId }          [CSRF]
+POST /account/create            → { jobId, sponsored }   [CSRF]
 GET  /account/job/:jobId        → { status, txId, error }
-GET  /account/value             → { hive, hbd, hp, totalUsd }
+GET  /account/value             → { hive, hbd, hp, totalUsd, emancipationRequired }
 
-POST /link/verify-challenge     → { challenge }      [CSRF]
-POST /link/confirm              → { ok, hiveUsername }[CSRF]
+POST /link/verify-challenge     → { challenge }          [CSRF]
+POST /link/confirm              → { ok, hiveUsername }   [CSRF]
+
+POST /hive/sign-message         → { signature, account } or { needsClientSigning, message, account }  [CSRF]
+  Body: { message: string (max 512 chars) }
+  Custodial: server signs with the user's posting key and returns the signature.
+  Emancipated: returns needsClientSigning=true — client must sign via Keychain/AIOha.
+  Use for: challenge-response identity verification, feature access gates, chat auth.
 
 POST /hive/broadcast            → { txId } or { needsClientSigning, unsignedOp }  [CSRF]
-POST /hive/transfer             → same               [CSRF]
-POST /hive/power-up             → same               [CSRF]
-POST /hive/power-down           → same               [CSRF]
-POST /hive/delegate             → same               [CSRF]
-POST /hive/claim-rewards        → { txId }           [CSRF]
+POST /hive/transfer             → same                   [CSRF]
+POST /hive/power-up             → same                   [CSRF]
+POST /hive/power-down           → same                   [CSRF]
+POST /hive/delegate             → same                   [CSRF]
+POST /hive/claim-rewards        → { txId }               [CSRF]
 
 GET  /emancipate/status         → { custodyMode, totalUsd, thresholdUsd }
 POST /emancipate/start          → { keys: { owner, active, posting, memo } } [CSRF]
@@ -144,15 +216,24 @@ POST /emancipate/start          → { keys: { owner, active, posting, memo } } [
 ### Internal (Bearer token)
 POST /internal/provision-account      → { jobId, userId }
 GET  /internal/jobs/:jobId            → { status, ...keys? }
-POST /internal/issue-sponsor-token    → { tokenId }
+POST /internal/issue-sponsor-token    → { tokenId, email, expiresAt }
 
-### Admin (session + isAdmin flag)
+### Admin (session + isAdmin required)
 GET  /admin/stats               → { actCount, pendingJobs, userCount }
 GET  /admin/jobs                → { jobs: [...] }
-POST /admin/claim-act           → { ok, txId }       [CSRF]
+POST /admin/claim-act           → { ok, txId }           [CSRF]
+
 GET  /admin/sponsor-tokens      → { tokens: [...] }
-POST /admin/sponsor-tokens      → { tokenId }        [CSRF]
-DELETE /admin/sponsor-tokens/:id → { ok: true }      [CSRF]
+POST /admin/sponsor-tokens      → { tokenId, emailSent, emailError? }  [CSRF]
+  Body: { email, note?, expiresInDays?, sendEmail? }
+  sendEmail=true sends an invite email even if user hasn't registered yet.
+DELETE /admin/sponsor-tokens/:id → { ok: true }          [CSRF]
+
+GET  /admin/admins              → { admins: [{ userId, name, provider, createdAt }] }
+POST /admin/admins              → { userId, name, provider }  [CSRF]
+  Body: { email } — user must already be registered
+DELETE /admin/admins/:userId    → { ok: true }           [CSRF]
+  Cannot demote yourself.
 
 ## Error Format
 
@@ -160,17 +241,28 @@ All errors: HTTP 4xx/5xx with body { "error": "error_code_string" }
 
 Common codes:
   unauthorized              — no valid session
+  admin_required            — endpoint requires isAdmin
   csrf_invalid              — missing or wrong x-csrf-token
-  already_has_account       — user already has a Hive account (use sponsor token to override)
+  already_linked            — user already has a Hive account linked
+  previously_had_account    — user used their free account already (sponsor token overrides)
+  global_daily_limit        — daily free account quota exhausted (resets midnight UTC)
+  ip_daily_limit            — per-IP daily quota exhausted
   no_acts                   — Snapie has no pre-claimed account tokens
   invalid_username          — format or on-chain conflict
+  insufficient_rc           — HTTP 503; account has no Resource Credits; RC recharges over time
+                              For posting ops: the Snapie service account is out of RC (operator issue)
+                              For active ops: the user's own account is out of RC
   emancipation_required     — account value exceeded threshold; user must export keys
   not_custodial             — action requires custodial mode
+  user_not_found            — no account with that email (admin: grant admin)
+  cannot_demote_self        — admin tried to revoke their own admin access
 
 ## Rate Limits (per IP)
   /api/auth/*               30 req / 15 min
+  /api/auth/email/resend    5 req / 1 hr
   /api/account/create       5 req / 1 hr
   /api/account/check-*      40 req / 1 min
+  /api/hive/sign-message    30 req / 1 min
   /api/hive/broadcast       60 req / 1 min
   /api/hive/transfer        10 req / 1 min
   /api/emancipate/*         5 req / 1 hr
@@ -181,6 +273,21 @@ vote, comment, delete_comment, custom_json, claim_reward_balance
 Active-level ops (transfer, power-up, power-down, delegate):
   Custodial   → server signs and broadcasts
   Emancipated → returns { needsClientSigning: true, unsignedOp }
+
+## Message Signing (/hive/sign-message)
+Signs an arbitrary message (max 512 chars) with the user's Hive posting key.
+Uses SHA-256 hash of the message + secp256k1 signing (dhive cryptoUtils.sha256 + PrivateKey.sign).
+The resulting signature is compatible with hive-js / dhive verifySignature.
+
+Typical flow (challenge-response):
+  1. Your app generates a nonce/challenge (e.g. UUID or timestamp-based string)
+  2. POST /api/hive/sign-message { message: challenge }
+  3. Your app verifies: verifySignature(account, challenge, signature, onChainPostingPubKey)
+  4. On success: grant access to the feature
+
+Emancipated users return needsClientSigning=true — handle with:
+  Keychain: window.hive_keychain.requestSignBuffer(account, message, 'Posting', cb)
+  AIOha:    aioha.signMessage(message, KeyTypes.Posting)
 
 ## Cookies
   snapieauth_session   httpOnly, Secure, SameSite=Lax  — JWT RS256

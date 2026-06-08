@@ -43,6 +43,12 @@ export async function hasPostingAuthority(username, appAccount) {
   return account.posting.account_auths.some(([acc]) => acc === appAccount)
 }
 
+export function signMessage(message, wif) {
+  const key = PrivateKey.fromString(wif)
+  const hash = cryptoUtils.sha256(message)
+  return key.sign(hash).toString()
+}
+
 export async function broadcastOps(operations, wif) {
   const key = PrivateKey.fromString(wif)
   return bclient.broadcast.sendOperations(operations, key)
@@ -66,6 +72,13 @@ export function hiveErr(err) {
     return err.message.slice(0, 200)
   }
   return String(err)
+}
+
+export function isRcError(err) {
+  const msg = (err?.message || '') + (err?.data?.message || '')
+  return /insufficient.{0,20}resource.{0,20}credit/i.test(msg) ||
+         /rc_exception/i.test(msg) ||
+         /rc_plugin/i.test(msg)
 }
 
 export { PrivateKey }

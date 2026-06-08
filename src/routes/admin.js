@@ -1,10 +1,12 @@
 import { Router } from 'express'
 import { asyncMw } from '../services/async-middleware.js'
-import { authMiddleware } from '../services/auth.js'
+import { authMiddleware, toOid } from '../services/auth.js'
 import { csrfMiddleware } from '../services/csrf.js'
 import { getAccount, broadcastOps, hiveErr } from '../services/hive.js'
 import { users, accountJobs } from '../services/db.js'
 import { issueToken, listTokens, revokeToken } from '../services/sponsor-tokens.js'
+import { sendSponsorInviteEmail } from '../services/email.js'
+import { hashEmail } from '../services/users.js'
 
 const router = Router()
 
@@ -76,10 +78,9 @@ router.get('/sponsor-tokens', authMiddleware, requireAdmin, asyncMw(async (req, 
 }))
 
 // POST /api/admin/sponsor-tokens
-// Issue a sponsor token for a specific email address.
-// The token is redeemed automatically when that email registers and creates a Hive account.
+// Body: { email, note?, expiresInDays?, sendEmail? }
 router.post('/sponsor-tokens', authMiddleware, requireAdmin, csrfMiddleware, asyncMw(async (req, res) => {
-  const { email, note = null, expiresInDays = null } = req.body
+  const { email, note = null, expiresInDays = null, sendEmail = false } = req.body
 
   if (!email || typeof email !== 'string' || !email.includes('@')) {
     return res.status(400).json({ error: 'valid email required' })
@@ -93,22 +94,93 @@ router.post('/sponsor-tokens', authMiddleware, requireAdmin, csrfMiddleware, asy
     expiresInDays: expiresInDays ? Number(expiresInDays) : null
   })
 
+  let emailSent = false
+  let emailError = null
+
+  if (sendEmail) {
+    try {
+      await sendSponsorInviteEmail(email, note)
+      emailSent = true
+    } catch (err) {
+      console.error('Sponsor invite email failed:', err)
+      emailError = 'Email delivery failed — invite was created successfully.'
+    }
+  }
+
   res.status(201).json({
     tokenId: token._id,
     email,
     note: token.note,
     expiresAt: token.expiresAt,
-    createdAt: token.createdAt
+    createdAt: token.createdAt,
+    emailSent,
+    emailError
   })
 }))
 
 // DELETE /api/admin/sponsor-tokens/:tokenId
-// Revoke an unused token.
 router.delete('/sponsor-tokens/:tokenId', authMiddleware, requireAdmin, csrfMiddleware, asyncMw(async (req, res) => {
   const deleted = await revokeToken(req.params.tokenId)
   if (!deleted) {
     return res.status(404).json({ error: 'token not found or already used' })
   }
+  res.json({ ok: true })
+}))
+
+// ── Admin user management ──────────────────────────────────────
+
+// GET /api/admin/admins
+router.get('/admins', authMiddleware, requireAdmin, asyncMw(async (req, res) => {
+  const admins = await users().find({ isAdmin: true }).toArray()
+  res.json({
+    admins: admins.map(u => ({
+      userId: u._id.toString(),
+      name: u.name || null,
+      provider: u.provider,
+      createdAt: u.createdAt
+    }))
+  })
+}))
+
+// POST /api/admin/admins — grant admin by email (user must already be registered)
+router.post('/admins', authMiddleware, requireAdmin, csrfMiddleware, asyncMw(async (req, res) => {
+  const { email } = req.body
+  if (!email || typeof email !== 'string' || !email.includes('@')) {
+    return res.status(400).json({ error: 'valid email required' })
+  }
+
+  const emailHash = hashEmail(email)
+  const user = await users().findOneAndUpdate(
+    { emailHash },
+    { $set: { isAdmin: true } },
+    { returnDocument: 'after' }
+  )
+
+  if (!user) {
+    return res.status(404).json({ error: 'user_not_found' })
+  }
+
+  res.json({
+    userId: user._id.toString(),
+    name: user.name || null,
+    provider: user.provider
+  })
+}))
+
+// DELETE /api/admin/admins/:userId — revoke admin
+router.delete('/admins/:userId', authMiddleware, requireAdmin, csrfMiddleware, asyncMw(async (req, res) => {
+  if (req.params.userId === req.user.userId) {
+    return res.status(400).json({ error: 'cannot_demote_self' })
+  }
+
+  const oid = toOid(req.params.userId)
+  if (!oid) return res.status(400).json({ error: 'invalid_user_id' })
+
+  const result = await users().updateOne({ _id: oid }, { $set: { isAdmin: false } })
+  if (result.matchedCount === 0) {
+    return res.status(404).json({ error: 'user_not_found' })
+  }
+
   res.json({ ok: true })
 }))
 

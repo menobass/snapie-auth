@@ -9,6 +9,7 @@ import { rateLimit } from 'express-rate-limit'
 import { connect } from './services/db.js'
 import { ensureIndexes } from './db/init.js'
 import { startReconcileLoop } from './services/account-jobs.js'
+import { getGlobalQuotaInfo } from './services/free-quota.js'
 import authRoutes from './routes/auth.js'
 import accountRoutes from './routes/account.js'
 import linkRoutes from './routes/link.js'
@@ -68,24 +69,35 @@ const rl = (windowMs, max) => rateLimit({
 })
 
 const authLimiter     = rl(15 * 60 * 1000,  30)   // 30/15min
+const resendLimiter   = rl(60 * 60 * 1000,  5)    // 5/hr
 const createLimiter   = rl(60 * 60 * 1000,  5)    // 5/hr
 const checkLimiter    = rl(60 * 1000,        40)   // 40/min
 const broadcastLimiter= rl(60 * 1000,        60)   // 60/min
+const signLimiter     = rl(60 * 1000,        30)   // 30/min
 const transferLimiter = rl(60 * 1000,        10)   // 10/min
 const emancLimiter    = rl(60 * 60 * 1000,  5)    // 5/hr
 
 // ── Routes ────────────────────────────────────────────────────
+app.use('/api/auth/email/resend',      resendLimiter)
 app.use('/api/auth',                  authLimiter, authRoutes)
 app.use('/api/account/create',        createLimiter)
 app.use('/api/account/check-username',checkLimiter)
 app.use('/api/account',              accountRoutes)
 app.use('/api/link',                 linkRoutes)
 app.use('/api/hive/broadcast',       broadcastLimiter)
+app.use('/api/hive/sign-message',    signLimiter)
 app.use('/api/hive/transfer',        transferLimiter)
 app.use('/api/hive',                 hiveRoutes)
 app.use('/api/emancipate',           emancLimiter, emancipateRoutes)
 app.use('/api/admin',                adminRoutes)
 app.use('/api/internal',             internalRoutes)
+
+// Public quota — how many free account slots remain today
+app.get('/api/quota', async (_req, res, next) => {
+  try {
+    res.json(await getGlobalQuotaInfo())
+  } catch (e) { next(e) }
+})
 
 // Public config — exposes non-secret config to the frontend
 app.get('/api/public-config', (_req, res) => {

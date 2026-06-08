@@ -12,6 +12,7 @@ export async function issueToken({ email, note = null, issuedBy, issuedByUserId 
 
   const doc = {
     _id: token,
+    email,
     emailHash,
     note,
     issuedBy,

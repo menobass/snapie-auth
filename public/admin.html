@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin — Snapie Auth</title>
+  <link rel="stylesheet" href="/style.css" />
+  <style>
+    .page { padding: 40px 0 80px; position: relative; z-index: 1; }
+
+    /* Page header */
+    .page-header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 32px;
+    }
+    .page-header h1 { font-size: 1.4rem; }
+
+    /* Stats bar */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 14px;
+      margin-bottom: 32px;
+    }
+    .stat-tile {
+      background: rgba(8, 24, 40, 0.75);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      transition: var(--transition);
+    }
+    .stat-tile:hover { border-color: var(--border-lit); }
+    .stat-label {
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-3);
+      margin-bottom: 8px;
+    }
+    .stat-value {
+      font-size: 1.5rem;
+      font-weight: 700;
+      font-family: var(--font-brand);
+      color: var(--text);
+    }
+    .stat-value.warn { color: #f59e0b; }
+    .stat-value.ok { color: var(--success); }
+    .stat-value.danger { color: var(--danger); }
+
+    /* Section headings */
+    .section-title {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      color: var(--text-3);
+      margin: 36px 0 18px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .section-title::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    /* Tabs */
+    .admin-tabs {
+      display: flex;
+      gap: 4px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 28px;
+    }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* Cards with inner sections */
+    .card + .card { margin-top: 16px; }
+    .card-title {
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-2);
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* Inline form row */
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    .form-row-3 {
+      display: grid;
+      grid-template-columns: 2fr 1fr 100px;
+      gap: 14px;
+    }
+
+    /* Textarea */
+    textarea {
+      width: 100%;
+      padding: 11px 14px;
+      background: rgba(11, 26, 44, 0.8);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-family: var(--font-body);
+      font-size: 0.88rem;
+      transition: var(--transition);
+      outline: none;
+      resize: vertical;
+      min-height: 64px;
+    }
+    textarea:hover { border-color: rgba(24, 168, 255, 0.2); }
+    textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(24, 168, 255, 0.15); }
+
+    /* Number input */
+    input[type="number"] {
+      width: 100%;
+      padding: 11px 14px;
+      background: rgba(11, 26, 44, 0.8);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-family: var(--font-body);
+      font-size: 0.88rem;
+      transition: var(--transition);
+      outline: none;
+    }
+    input[type="number"]:hover { border-color: rgba(24, 168, 255, 0.2); }
+    input[type="number"]:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(24, 168, 255, 0.15); }
+
+    /* Checkbox row */
+    .check-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.83rem;
+      color: var(--text-2);
+      cursor: pointer;
+      user-select: none;
+    }
+    .check-row input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      accent-color: var(--primary);
+      cursor: pointer;
+    }
+
+    /* Data table */
+    .data-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    .data-table th {
+      padding: 8px 12px;
+      text-align: left;
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-3);
+      border-bottom: 1px solid var(--border);
+      font-weight: 500;
+    }
+    .data-table td {
+      padding: 11px 12px;
+      border-bottom: 1px solid rgba(23, 58, 92, 0.4);
+      color: var(--text-2);
+      vertical-align: middle;
+    }
+    .data-table tbody tr:last-child td { border-bottom: none; }
+    .data-table tbody tr:hover td { background: rgba(24, 168, 255, 0.03); }
+    .data-table .empty td { text-align: center; padding: 28px; color: var(--text-3); }
+    .data-table .col-em { color: var(--text); font-weight: 500; }
+    .data-table .col-dim { color: var(--text-3); font-size: 0.75rem; }
+    .data-table .col-mono { font-family: var(--font-body); font-size: 0.75rem; }
+
+    /* Used tokens details */
+    details { margin-top: 12px; }
+    summary {
+      font-size: 0.78rem;
+      color: var(--text-2);
+      cursor: pointer;
+      padding: 10px 0;
+      letter-spacing: 0.04em;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    summary::before { content: '▶'; font-size: 0.6rem; transition: transform 0.15s; }
+    details[open] summary::before { transform: rotate(90deg); }
+    summary::-webkit-details-marker { display: none; }
+
+    .used-table-wrap {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      margin-top: 10px;
+    }
+
+    /* Alert area */
+    .alert-area { min-height: 0; margin-bottom: 4px; }
+
+    /* System action row */
+    .system-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .system-row p { font-size: 0.84rem; color: var(--text-2); max-width: 480px; }
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="/" class="wordmark"><span class="dot"></span>SNAPIE AUTH</a>
+      <div class="nav-user">
+        <img src="" alt="" id="nav-avatar" class="avatar" style="display:none" />
+        <span id="nav-name" class="text-sm text-muted"></span>
+        <a href="/manage.html" class="btn btn-ghost btn-sm">Dashboard</a>
+        <button class="btn btn-ghost btn-sm" id="logout-btn">Sign out</button>
+      </div>
+    </div>
+  </nav>
+
+  <div class="page">
+    <div class="container">
+
+      <div class="page-header">
+        <h1>Admin Panel</h1>
+        <span class="badge badge-blue">Admin</span>
+      </div>
+
+      <!-- Stats -->
+      <div class="stats-grid">
+        <div class="stat-tile">
+          <div class="stat-label">ACTs Available</div>
+          <div class="stat-value" id="stat-acts">—</div>
+        </div>
+        <div class="stat-tile">
+          <div class="stat-label">Pending Jobs</div>
+          <div class="stat-value" id="stat-jobs">—</div>
+        </div>
+        <div class="stat-tile">
+          <div class="stat-label">Total Users</div>
+          <div class="stat-value" id="stat-users">—</div>
+        </div>
+        <div class="stat-tile">
+          <div class="stat-label">Free Slots Today</div>
+          <div class="stat-value" id="stat-slots">—</div>
+        </div>
+      </div>
+
+      <!-- Main tabs -->
+      <div class="admin-tabs tabs">
+        <button class="tab active" data-tab="sponsorships">Sponsorships</button>
+        <button class="tab" data-tab="admins">Admins</button>
+        <button class="tab" data-tab="system">System</button>
+      </div>
+
+      <!-- ── TAB: Sponsorships ───────────────────────────────────── -->
+      <div id="sponsorships-panel" class="tab-panel active">
+
+        <!-- Issue invite -->
+        <div class="card mb-4">
+          <div class="card-title">Issue Sponsor Invite</div>
+          <div id="issue-alert" class="alert-area"></div>
+          <div class="form-row" style="margin-bottom:14px">
+            <div class="form-group" style="margin-bottom:0">
+              <label>Email Address</label>
+              <input type="email" id="invite-email" placeholder="user@example.com" autocomplete="off" />
+            </div>
+            <div class="form-group" style="margin-bottom:0">
+              <label>Expires In Days <span class="text-dim">(optional)</span></label>
+              <input type="number" id="invite-expiry" placeholder="Never" min="1" max="365" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Note / Message <span class="text-dim">(optional — shown in invite email)</span></label>
+            <textarea id="invite-note" placeholder="e.g. Welcome to the community! You earned this through…"></textarea>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px">
+            <label class="check-row">
+              <input type="checkbox" id="invite-send-email" checked />
+              Send invite email to this address
+            </label>
+            <button class="btn btn-primary" id="issue-btn">Issue Invite</button>
+          </div>
+        </div>
+
+        <!-- Pending invites -->
+        <div class="card">
+          <div class="card-title">
+            Pending Invites
+            <span class="badge badge-blue" id="pending-count">0</span>
+            <button class="btn btn-ghost btn-sm" id="refresh-tokens-btn" style="margin-left:auto">Refresh</button>
+          </div>
+          <div style="overflow-x:auto">
+            <table class="data-table" id="pending-table">
+              <thead>
+                <tr>
+                  <th>Email</th>
+                  <th>Note</th>
+                  <th>Issued</th>
+                  <th>Expires</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+
+          <!-- Used invites (collapsed) -->
+          <details id="used-details" style="margin-top:20px">
+            <summary>
+              Used Invites
+              <span class="badge badge-gray" id="used-count" style="margin-left:4px">0</span>
+            </summary>
+            <div class="used-table-wrap">
+              <table class="data-table" id="used-table">
+                <thead>
+                  <tr>
+                    <th>Email</th>
+                    <th>Note</th>
+                    <th>Issued</th>
+                    <th>Used</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </details>
+        </div>
+
+      </div><!-- /sponsorships-panel -->
+
+      <!-- ── TAB: Admins ─────────────────────────────────────────── -->
+      <div id="admins-panel" class="tab-panel">
+
+        <div class="card mb-4">
+          <div class="card-title">Grant Admin Access</div>
+          <div id="grant-alert" class="alert-area"></div>
+          <p class="text-sm text-muted mb-4">The user must already be registered with this email address.</p>
+          <div style="display:flex;gap:12px;align-items:flex-end">
+            <div class="form-group" style="flex:1;margin-bottom:0">
+              <label>Email Address</label>
+              <input type="email" id="grant-email" placeholder="user@example.com" autocomplete="off" />
+            </div>
+            <button class="btn btn-primary" id="grant-btn">Grant Admin</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">
+            Current Admins
+            <button class="btn btn-ghost btn-sm" id="refresh-admins-btn" style="margin-left:auto">Refresh</button>
+          </div>
+          <div style="overflow-x:auto">
+            <table class="data-table" id="admins-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Provider</th>
+                  <th>Since</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+      </div><!-- /admins-panel -->
+
+      <!-- ── TAB: System ─────────────────────────────────────────── -->
+      <div id="system-panel" class="tab-panel">
+
+        <div class="card mb-4">
+          <div class="card-title">Claim Account Token (ACT)</div>
+          <div id="claim-alert" class="alert-area"></div>
+          <div class="system-row">
+            <p>Burns RC from the Snapie account to claim one account creation token. ACTs are required to create new Hive accounts. Current count is shown in the stats above.</p>
+            <button class="btn btn-outline" id="claim-act-btn">Claim ACT</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">
+            Recent Account Jobs
+            <button class="btn btn-ghost btn-sm" id="refresh-jobs-btn" style="margin-left:auto">Refresh</button>
+          </div>
+          <div style="overflow-x:auto">
+            <table class="data-table" id="jobs-table">
+              <thead>
+                <tr>
+                  <th>Username</th>
+                  <th>Status</th>
+                  <th>Created</th>
+                  <th>TX ID</th>
+                  <th>Sponsored</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+      </div><!-- /system-panel -->
+
+    </div>
+  </div>
+
+  <footer class="footer">
+    <div>SNAPIE AUTH · <a href="/docs.html">API Docs</a></div>
+  </footer>
+
+  <script type="module">
+    import { api, checkAuth, showAlert, setLoading } from '/auth.js'
+
+    let currentUserId = null
+
+    // ── Helpers ──────────────────────────────────────────────────
+    function fmtDate(d) {
+      if (!d) return '—'
+      return new Date(d).toLocaleDateString('en-US', {
+        month: 'short', day: 'numeric',
+        hour: '2-digit', minute: '2-digit'
+      })
+    }
+
+    function statusBadge(status) {
+      const cls = {
+        confirmed:    'badge-green',
+        failed:       'badge-red',
+        expired:      'badge-red',
+        pending:      'badge-gray',
+        broadcasting: 'badge-blue',
+        acked:        'badge-blue'
+      }
+      return `<span class="badge ${cls[status] || 'badge-gray'}">${status}</span>`
+    }
+
+    function shortId(id) {
+      if (!id) return '—'
+      return id.toString().slice(0, 8) + '…'
+    }
+
+    function emptyRow(cols, msg) {
+      return `<tr class="empty"><td colspan="${cols}">${msg}</td></tr>`
+    }
+
+    // ── Init ─────────────────────────────────────────────────────
+    async function init() {
+      const result = await checkAuth()
+      if (!result?.user) { window.location.href = '/'; return }
+      if (!result.user.isAdmin) { window.location.href = '/manage.html'; return }
+
+      currentUserId = result.user.id
+
+      const navAvatar = document.getElementById('nav-avatar')
+      if (result.user.picture) {
+        navAvatar.src = result.user.picture
+        navAvatar.style.display = 'block'
+      }
+      document.getElementById('nav-name').textContent = result.user.name || ''
+
+      await loadAll()
+    }
+
+    async function loadAll() {
+      await Promise.all([loadStats(), loadTokens(), loadAdmins(), loadJobs()])
+    }
+
+    // ── Stats ────────────────────────────────────────────────────
+    async function loadStats() {
+      try {
+        const [stats, quota] = await Promise.all([
+          api('GET', '/admin/stats'),
+          fetch('/api/quota').then(r => r.json())
+        ])
+
+        const actsEl = document.getElementById('stat-acts')
+        actsEl.textContent = stats.actCount
+        actsEl.className = 'stat-value ' + (stats.actCount === 0 ? 'danger' : stats.actCount < 3 ? 'warn' : 'ok')
+
+        const jobsEl = document.getElementById('stat-jobs')
+        jobsEl.textContent = stats.pendingJobs
+        jobsEl.className = 'stat-value ' + (stats.pendingJobs > 5 ? 'warn' : '')
+
+        document.getElementById('stat-users').textContent = stats.userCount
+
+        const slotsEl = document.getElementById('stat-slots')
+        slotsEl.textContent = `${quota.remaining}/${quota.total}`
+        slotsEl.className = 'stat-value ' + (quota.remaining === 0 ? 'warn' : 'ok')
+      } catch (e) {
+        console.error('Stats load failed', e)
+      }
+    }
+
+    // ── Tokens ───────────────────────────────────────────────────
+    async function loadTokens() {
+      try {
+        const { tokens } = await api('GET', '/admin/sponsor-tokens?includeUsed=true')
+        const pending = tokens.filter(t => !t.usedAt)
+        const used = tokens.filter(t => t.usedAt)
+        renderPendingTokens(pending)
+        renderUsedTokens(used)
+        document.getElementById('pending-count').textContent = pending.length
+        document.getElementById('used-count').textContent = used.length
+      } catch (e) {
+        console.error('Tokens load failed', e)
+      }
+    }
+
+    function renderPendingTokens(tokens) {
+      const tbody = document.querySelector('#pending-table tbody')
+      if (!tokens.length) {
+        tbody.innerHTML = emptyRow(5, 'No pending invites')
+        return
+      }
+      tbody.innerHTML = ''
+      for (const t of tokens) {
+        const tr = document.createElement('tr')
+        tr.dataset.tokenId = t._id
+        tr.innerHTML = `
+          <td class="col-em">${t.email || '<em class="text-dim">unknown</em>'}</td>
+          <td>${t.note ? `<span class="col-dim">${t.note}</span>` : '<span class="col-dim">—</span>'}</td>
+          <td class="col-dim">${fmtDate(t.createdAt)}</td>
+          <td class="col-dim">${t.expiresAt ? fmtDate(t.expiresAt) : 'Never'}</td>
+          <td><button class="btn btn-danger btn-sm revoke-btn">Revoke</button></td>
+        `
+        tr.querySelector('.revoke-btn').addEventListener('click', () => revokeToken(t._id, tr))
+        tbody.appendChild(tr)
+      }
+    }
+
+    function renderUsedTokens(tokens) {
+      const tbody = document.querySelector('#used-table tbody')
+      if (!tokens.length) {
+        tbody.innerHTML = emptyRow(4, 'No used invites yet')
+        return
+      }
+      tbody.innerHTML = tokens.map(t => `
+        <tr>
+          <td class="col-em">${t.email || '<em class="col-dim">unknown</em>'}</td>
+          <td>${t.note ? `<span class="col-dim">${t.note}</span>` : '<span class="col-dim">—</span>'}</td>
+          <td class="col-dim">${fmtDate(t.createdAt)}</td>
+          <td class="col-dim">${fmtDate(t.usedAt)}</td>
+        </tr>
+      `).join('')
+    }
+
+    async function revokeToken(tokenId, tr) {
+      if (!confirm('Revoke this invite? The recipient will no longer be able to use it.')) return
+      const btn = tr.querySelector('.revoke-btn')
+      setLoading(btn, true)
+      try {
+        await api('DELETE', `/admin/sponsor-tokens/${tokenId}`)
+        tr.remove()
+        const countEl = document.getElementById('pending-count')
+        countEl.textContent = Math.max(0, parseInt(countEl.textContent) - 1)
+      } catch (err) {
+        setLoading(btn, false)
+        alert(err.data?.error || 'Failed to revoke invite')
+      }
+    }
+
+    // ── Issue invite ─────────────────────────────────────────────
+    document.getElementById('issue-btn').addEventListener('click', async () => {
+      const btn = document.getElementById('issue-btn')
+      const alertArea = document.getElementById('issue-alert')
+      const email = document.getElementById('invite-email').value.trim()
+      const note = document.getElementById('invite-note').value.trim() || null
+      const expiryVal = document.getElementById('invite-expiry').value.trim()
+      const sendEmail = document.getElementById('invite-send-email').checked
+
+      if (!email) {
+        showAlert(alertArea, 'Email address is required.', 'danger')
+        return
+      }
+
+      setLoading(btn, true)
+      try {
+        const result = await api('POST', '/admin/sponsor-tokens', {
+          email,
+          note,
+          expiresInDays: expiryVal ? Number(expiryVal) : null,
+          sendEmail
+        })
+
+        let msg = `Invite created for ${result.email}.`
+        if (result.emailSent) msg += ' Invite email sent.'
+        if (result.emailError) msg += ` Note: ${result.emailError}`
+
+        showAlert(alertArea, msg, result.emailError ? 'info' : 'success')
+
+        document.getElementById('invite-email').value = ''
+        document.getElementById('invite-note').value = ''
+        document.getElementById('invite-expiry').value = ''
+
+        await loadTokens()
+        await loadStats()
+      } catch (err) {
+        showAlert(alertArea, err.data?.error || 'Failed to create invite.', 'danger')
+      }
+      setLoading(btn, false)
+    })
+
+    document.getElementById('refresh-tokens-btn').addEventListener('click', loadTokens)
+
+    // ── Admins ───────────────────────────────────────────────────
+    async function loadAdmins() {
+      try {
+        const { admins } = await api('GET', '/admin/admins')
+        renderAdmins(admins)
+      } catch (e) {
+        console.error('Admins load failed', e)
+      }
+    }
+
+    function renderAdmins(admins) {
+      const tbody = document.querySelector('#admins-table tbody')
+      if (!admins.length) {
+        tbody.innerHTML = emptyRow(4, 'No admins found')
+        return
+      }
+      tbody.innerHTML = ''
+      for (const a of admins) {
+        const isSelf = a.userId === currentUserId
+        const tr = document.createElement('tr')
+        tr.innerHTML = `
+          <td class="col-em">${a.name || '<em class="col-dim">No name</em>'}</td>
+          <td><span class="badge badge-gray">${a.provider}</span></td>
+          <td class="col-dim">${fmtDate(a.createdAt)}</td>
+          <td>${isSelf
+            ? '<span class="badge badge-blue">You</span>'
+            : `<button class="btn btn-danger btn-sm revoke-admin-btn" data-user-id="${a.userId}">Revoke</button>`
+          }</td>
+        `
+        if (!isSelf) {
+          tr.querySelector('.revoke-admin-btn').addEventListener('click', () => revokeAdmin(a.userId, a.name, tr))
+        }
+        tbody.appendChild(tr)
+      }
+    }
+
+    async function revokeAdmin(userId, name, tr) {
+      if (!confirm(`Remove admin access for ${name || userId}?`)) return
+      const btn = tr.querySelector('.revoke-admin-btn')
+      setLoading(btn, true)
+      try {
+        await api('DELETE', `/admin/admins/${userId}`)
+        tr.remove()
+      } catch (err) {
+        setLoading(btn, false)
+        const msg = err.data?.error || 'Failed to revoke admin'
+        showAlert(document.getElementById('grant-alert'), msg, 'danger')
+      }
+    }
+
+    document.getElementById('grant-btn').addEventListener('click', async () => {
+      const btn = document.getElementById('grant-btn')
+      const alertArea = document.getElementById('grant-alert')
+      const email = document.getElementById('grant-email').value.trim()
+
+      if (!email) {
+        showAlert(alertArea, 'Email address is required.', 'danger')
+        return
+      }
+
+      setLoading(btn, true)
+      try {
+        const result = await api('POST', '/admin/admins', { email })
+        showAlert(alertArea, `Admin access granted to ${result.name || email}.`, 'success')
+        document.getElementById('grant-email').value = ''
+        await loadAdmins()
+      } catch (err) {
+        const code = err.data?.error
+        const msg = code === 'user_not_found'
+          ? 'No account found for that email. They must register first.'
+          : (err.data?.error || 'Failed to grant admin access.')
+        showAlert(alertArea, msg, 'danger')
+      }
+      setLoading(btn, false)
+    })
+
+    document.getElementById('refresh-admins-btn').addEventListener('click', loadAdmins)
+
+    // ── Jobs ─────────────────────────────────────────────────────
+    async function loadJobs() {
+      try {
+        const { jobs } = await api('GET', '/admin/jobs')
+        renderJobs(jobs)
+      } catch (e) {
+        console.error('Jobs load failed', e)
+      }
+    }
+
+    function renderJobs(jobs) {
+      const tbody = document.querySelector('#jobs-table tbody')
+      if (!jobs.length) {
+        tbody.innerHTML = emptyRow(5, 'No account jobs yet')
+        return
+      }
+      tbody.innerHTML = jobs.map(j => `
+        <tr>
+          <td class="col-em">${j.username || '—'}</td>
+          <td>${statusBadge(j.status)}</td>
+          <td class="col-dim">${fmtDate(j.createdAt)}</td>
+          <td class="col-mono col-dim">${j.txId ? shortId(j.txId) : '—'}</td>
+          <td>${j.sponsorTokenId ? '<span class="badge badge-blue">Yes</span>' : '<span class="col-dim">—</span>'}</td>
+        </tr>
+      `).join('')
+    }
+
+    document.getElementById('refresh-jobs-btn').addEventListener('click', loadJobs)
+
+    // ── Claim ACT ────────────────────────────────────────────────
+    document.getElementById('claim-act-btn').addEventListener('click', async () => {
+      const btn = document.getElementById('claim-act-btn')
+      const alertArea = document.getElementById('claim-alert')
+      if (!confirm('Claim one ACT? This will burn RC from the Snapie account.')) return
+      setLoading(btn, true)
+      try {
+        const result = await api('POST', '/admin/claim-act')
+        showAlert(alertArea, `ACT claimed successfully. TX: ${result.txId || 'pending'}`, 'success')
+        await loadStats()
+      } catch (err) {
+        showAlert(alertArea, err.data?.error || 'Failed to claim ACT.', 'danger')
+      }
+      setLoading(btn, false)
+    })
+
+    // ── Tab navigation ───────────────────────────────────────────
+    document.querySelectorAll('.admin-tabs .tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.admin-tabs .tab').forEach(t => t.classList.remove('active'))
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'))
+        tab.classList.add('active')
+        document.getElementById(`${tab.dataset.tab}-panel`).classList.add('active')
+      })
+    })
+
+    // ── Logout ───────────────────────────────────────────────────
+    document.getElementById('logout-btn').addEventListener('click', async () => {
+      await api('POST', '/auth/logout').catch(() => {})
+      window.location.href = '/'
+    })
+
+    init()
+  </script>
+</body>
+</html>

@@ -7,7 +7,9 @@ Hive account gateway and signing proxy for [Snapie](https://snapie.io).
 - Server-side key custody — no wallet required for new users
 - Posting-level and active-level signing proxy
 - Voluntary key export (emancipation)
-- Sponsor token system for gifting free accounts
+- Sponsor token system for gifting free accounts (email invites, even pre-registration)
+- Daily free-account quota with public `/api/quota` endpoint for consuming apps
+- Admin panel at `/admin.html` — sponsorships, admin management, system controls
 - Internal API for service-to-service account provisioning
 - Frontend UI at `/` with API docs at `/docs.html`
 
@@ -143,6 +145,17 @@ See `.env.example` for the full list. Key variables:
 | `SNAPIE_POSTING_KEY` | Posting private key for signing proxy + RC delegation |
 | `KEY_ENCRYPTION_PEPPER` | 32-byte hex secret for custodial key encryption — **never change after first deploy** |
 | `EMANCIPATION_THRESHOLD_USD` | Force key export above this account value (0 to disable) |
+| `RC_DELEGATION_BN` | RC delegated to new accounts in billions (default: 5) |
+| `FREE_ACCOUNTS_PER_IP_PER_DAY` | Max free account creations per IP per day (default: 2) |
+| `FREE_ACCOUNTS_GLOBAL_PER_DAY` | Max free account creations globally per day (default: 10) |
+| `EMAIL_HOST` | SMTP host (e.g. `smtp.resend.com`) |
+| `EMAIL_PORT` | SMTP port (default: 465) |
+| `EMAIL_SECURE` | Use TLS (default: true) |
+| `EMAIL_USER` | SMTP username |
+| `EMAIL_PASS` | SMTP password / API key |
+| `EMAIL_FROM` | From address for outbound email |
+| `AUTH_BASE_URL` | Public base URL, used in email links (e.g. `https://auth.snapie.io`) |
+| `ADMIN_EMAILS` | Comma-separated emails auto-granted admin on login (bootstrap — see [Admin](#admin)) |
 | `INTERNAL_API_KEY` | Bearer token for `/api/internal/*` endpoints |
 
 Generate secrets:
@@ -157,6 +170,12 @@ openssl rand -hex 32   # INTERNAL_API_KEY
 
 Full reference at `/docs.html` or `public/docs.html`.  
 Machine-readable contract at `/llms.txt`.
+
+### Public
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/quota` | Free account slots remaining today — no auth required |
+| GET | `/api/public-config` | Frontend config (Google client ID, network) |
 
 ### Auth
 | Method | Path | Description |
@@ -176,13 +195,28 @@ Machine-readable contract at `/llms.txt`.
 | GET | `/api/account/job/:jobId` | Poll creation status |
 
 ### Hive signing proxy
-| Method | Path | Auth level |
+| Method | Path | Description |
 |---|---|---|
-| POST | `/api/hive/broadcast` | Posting (custodial: signed; emancipated: unsigned op returned) |
-| POST | `/api/hive/transfer` | Active |
-| POST | `/api/hive/power-up` | Active |
-| POST | `/api/hive/power-down` | Active |
-| POST | `/api/hive/delegate` | Active |
+| POST | `/api/hive/sign-message` | Sign a challenge with the user's posting key (custodial: server signs; emancipated: client signs) |
+| POST | `/api/hive/broadcast` | Posting-level ops — custodial: signed; emancipated: unsigned op returned |
+| POST | `/api/hive/transfer` | Active-level transfer |
+| POST | `/api/hive/power-up` | Active-level power up |
+| POST | `/api/hive/power-down` | Active-level power down |
+| POST | `/api/hive/delegate` | Active-level RC/VP delegation |
+| POST | `/api/hive/claim-rewards` | Claim pending reward balances |
+
+### Admin (session, `isAdmin` required)
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/admin/stats` | ACT count, pending jobs, user count |
+| GET | `/api/admin/jobs` | Last 100 account creation jobs |
+| POST | `/api/admin/claim-act` | Claim one ACT from the Snapie account |
+| GET | `/api/admin/sponsor-tokens` | List all sponsor tokens |
+| POST | `/api/admin/sponsor-tokens` | Issue token — optionally send invite email |
+| DELETE | `/api/admin/sponsor-tokens/:id` | Revoke an unused token |
+| GET | `/api/admin/admins` | List admin users |
+| POST | `/api/admin/admins` | Grant admin by email |
+| DELETE | `/api/admin/admins/:userId` | Revoke admin |
 
 ### Internal (Bearer token)
 | Method | Path | Description |
@@ -190,6 +224,25 @@ Machine-readable contract at `/llms.txt`.
 | POST | `/api/internal/provision-account` | Create account without user session |
 | GET | `/api/internal/jobs/:jobId` | Poll + retrieve keys (one-shot) |
 | POST | `/api/internal/issue-sponsor-token` | Gift a free account to an email |
+
+---
+
+## Admin
+
+The admin panel is at `/admin.html`. Access requires `isAdmin: true` on the user's account.
+
+### Bootstrap (first admin)
+
+Add your email to `ADMIN_EMAILS` in `.env` and restart the process. On your next login, `isAdmin` is permanently granted to your account in the DB. Once you're in, you can grant others via the Admins tab — the env var is only needed for the initial bootstrap.
+
+```
+ADMIN_EMAILS=you@example.com,colleague@example.com
+```
+
+### Features
+- **Sponsorships tab** — issue invite tokens to any email (registered or not), optionally send an invite email, view/revoke pending invites, see used invites
+- **Admins tab** — grant or revoke admin access by email
+- **System tab** — claim ACTs, view recent account creation jobs
 
 ---
 

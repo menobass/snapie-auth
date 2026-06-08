@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { asyncMw } from '../services/async-middleware.js'
 import { authMiddleware } from '../services/auth.js'
 import { csrfMiddleware } from '../services/csrf.js'
-import { broadcastOps, getAccount, hiveErr } from '../services/hive.js'
+import { broadcastOps, getAccount, hiveErr, isRcError, signMessage } from '../services/hive.js'
 import { getUserById } from '../services/users.js'
 import { deriveServerKey, decryptKey } from '../services/key-crypto.js'
 import { broadcastLog } from '../services/db.js'
@@ -65,6 +65,10 @@ router.post('/broadcast', authMiddleware, csrfMiddleware, asyncMw(async (req, re
     await logOp(user._id, user.hiveUsername, opType, 'posting', user.custodyMode, result.id, true, null, req.ip)
     res.json({ txId: result.id })
   } catch (err) {
+    if (isRcError(err)) {
+      await logOp(user._id, user.hiveUsername, opType, 'posting', user.custodyMode, null, false, 'insufficient_rc', req.ip)
+      return res.status(503).json({ error: 'insufficient_rc' })
+    }
     const errMsg = hiveErr(err)
     await logOp(user._id, user.hiveUsername, opType, 'posting', user.custodyMode, null, false, errMsg, req.ip)
     res.status(500).json({ error: errMsg })
@@ -101,6 +105,10 @@ async function activeOp(req, res, opType, buildOp) {
     await logOp(user._id, user.hiveUsername, opType, 'active', 'custodial', result.id, true, null, req.ip)
     res.json({ txId: result.id })
   } catch (err) {
+    if (isRcError(err)) {
+      await logOp(user._id, user.hiveUsername, opType, 'active', 'custodial', null, false, 'insufficient_rc', req.ip)
+      return res.status(503).json({ error: 'insufficient_rc' })
+    }
     const errMsg = hiveErr(err)
     await logOp(user._id, user.hiveUsername, opType, 'active', user.custodyMode, null, false, errMsg, req.ip)
     res.status(500).json({ error: errMsg })
@@ -184,9 +192,49 @@ router.post('/claim-rewards', authMiddleware, csrfMiddleware, asyncMw(async (req
     await logOp(user._id, user.hiveUsername, 'claim_reward_balance', 'posting', user.custodyMode, result.id, true, null, req.ip)
     res.json({ txId: result.id })
   } catch (err) {
+    if (isRcError(err)) {
+      await logOp(user._id, user.hiveUsername, 'claim_reward_balance', 'posting', user.custodyMode, null, false, 'insufficient_rc', req.ip)
+      return res.status(503).json({ error: 'insufficient_rc' })
+    }
     const errMsg = hiveErr(err)
     await logOp(user._id, user.hiveUsername, 'claim_reward_balance', 'posting', user.custodyMode, null, false, errMsg, req.ip)
     res.status(500).json({ error: errMsg })
+  }
+}))
+
+// POST /api/hive/sign-message
+// Signs a challenge/message with the user's Hive posting key.
+// Custodial: server decrypts and signs silently.
+// Emancipated: returns { needsClientSigning: true } — client signs via Keychain/AIOha.
+router.post('/sign-message', authMiddleware, csrfMiddleware, asyncMw(async (req, res) => {
+  const user = await getUserById(req.user.userId)
+  if (!user || !user.hiveUsername) {
+    return res.status(403).json({ error: 'no_hive_account' })
+  }
+
+  const { message } = req.body
+  if (!message || typeof message !== 'string') {
+    return res.status(400).json({ error: 'message required' })
+  }
+  if (message.length > 512) {
+    return res.status(400).json({ error: 'message_too_long' })
+  }
+
+  if (user.custodyMode === 'emancipated') {
+    return res.json({ needsClientSigning: true, message, account: user.hiveUsername })
+  }
+
+  if (user.custodyMode !== 'custodial') {
+    return res.status(403).json({ error: 'no_custody_mode' })
+  }
+
+  try {
+    const serverKey = deriveServerKey(user._id.toString())
+    const postingWif = decryptKey(user.encryptedKeys.posting, serverKey)
+    const signature = signMessage(message, postingWif)
+    res.json({ signature, account: user.hiveUsername })
+  } catch {
+    res.status(500).json({ error: 'signing_failed' })
   }
 }))
 

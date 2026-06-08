@@ -10,7 +10,7 @@ export function hashEmail(email) {
   return crypto.createHmac('sha256', PEPPER).update(email.toLowerCase().trim()).digest('hex')
 }
 
-export async function upsertUser({ provider, providerId, emailHash, name, picture }) {
+export async function upsertUser({ provider, providerId, emailHash, name, picture, emailVerified }) {
   const now = new Date()
   const result = await users().findOneAndUpdate(
     { provider, providerId },
@@ -28,6 +28,7 @@ export async function upsertUser({ provider, providerId, emailHash, name, pictur
         custodyMode: null,
         encryptedKeys: null,
         passwordHash: null,
+        emailVerified: emailVerified ?? true,
         everHadAccount: false,
         sessionMinIat: 0,
         emancipatedAt: null,

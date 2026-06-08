@@ -44,6 +44,22 @@ export async function ensureIndexes() {
     database.collection('snapieauth_sponsor_tokens').createIndex(
       { expiresAt: 1 }, { expireAfterSeconds: 0, sparse: true }
     ),
+
+    // snapieauth_email_verifications — pending email verification tokens
+    database.collection('snapieauth_email_verifications').createIndex(
+      { token: 1 }, { unique: true }
+    ),
+    database.collection('snapieauth_email_verifications').createIndex(
+      { expiresAt: 1 }, { expireAfterSeconds: 0 }
+    ),
+
+    // snapieauth_free_quotas — daily IP and global account creation counters
+    database.collection('snapieauth_free_quotas').createIndex(
+      { type: 1, key: 1, date: 1 }, { unique: true }
+    ),
+    database.collection('snapieauth_free_quotas').createIndex(
+      { expiresAt: 1 }, { expireAfterSeconds: 0 }
+    ),
   ])
 
   console.log('MongoDB indexes ensured')

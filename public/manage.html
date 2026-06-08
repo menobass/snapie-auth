@@ -172,6 +172,7 @@
       <div class="nav-user">
         <img src="" alt="" id="nav-avatar" class="avatar" style="display:none" />
         <span id="nav-name" class="text-sm text-muted"></span>
+        <a href="/admin.html" id="nav-admin" class="btn btn-ghost btn-sm hidden">Admin</a>
         <button class="btn btn-ghost btn-sm" id="logout-btn">Sign out</button>
       </div>
     </div>
@@ -450,6 +451,15 @@
 
     let currentUser = null
     let selectedCustody = 'custodial'
+
+    const REASON_MSG = {
+      already_linked:        'You already have a Hive account linked.',
+      previously_had_account:'You have already used your free account. Use a sponsor token to create another.',
+      no_acts:               'Account creation is temporarily unavailable. Please try again later.',
+      ip_daily_limit:        'Too many accounts created from your network today. Try again tomorrow.',
+      global_daily_limit:    'The daily free account limit has been reached. Try again tomorrow.',
+    }
+    const reasonMsg = r => REASON_MSG[r] || r || 'Not eligible for a free account.'
     let pollInterval = null
     let challengeText = null
 
@@ -486,7 +496,7 @@
       if (!idToken) return false
       window.history.replaceState({}, '', '/manage.html')
       try {
-        await api('POST', '/auth/google', { idToken })
+        await api('POST', '/auth/google', { credential: idToken })
         return true
       } catch (err) {
         showAlert(document.getElementById('main-alert') || document.body, err.data?.error || 'Google login failed.', 'danger')
@@ -512,6 +522,9 @@
         navAvatar.style.display = 'block'
       }
       document.getElementById('nav-name').textContent = currentUser.name || ''
+      if (currentUser.isAdmin) {
+        document.getElementById('nav-admin').classList.remove('hidden')
+      }
 
       // Route to correct state
       if (result.emancipationRequired) {
@@ -540,10 +553,10 @@
           badge.className = 'badge badge-green'
           document.getElementById('create-btn').disabled = false
         } else {
-          badge.textContent = data.reason || 'Not Eligible'
+          badge.textContent = 'Not Eligible'
           badge.className = 'badge badge-red'
           document.getElementById('create-btn').disabled = true
-          showAlert(document.getElementById('main-alert'), data.reason || 'Not eligible for a free account.', 'danger')
+          showAlert(document.getElementById('main-alert'), reasonMsg(data.reason), 'danger')
         }
       } catch {
         badge.textContent = 'Error'
@@ -630,7 +643,7 @@
         const data = await api('POST', '/account/create', body)
         startPolling(data.jobId, username, data.sponsored)
       } catch (err) {
-        showAlert(document.getElementById('main-alert'), err.data?.error || 'Failed to create account.', 'danger')
+        showAlert(document.getElementById('main-alert'), reasonMsg(err.data?.error), 'danger')
         setLoading(btn, false)
       }
     })

@@ -1,3 +1,4 @@
+import crypto from 'crypto'
 import { Router } from 'express'
 import argon2 from 'argon2'
 import { asyncMw } from '../services/async-middleware.js'
@@ -5,7 +6,22 @@ import { authMiddleware, clearSessionCookie } from '../services/auth.js'
 import { csrfMiddleware, clearCsrfCookie, setCsrfCookie, CSRF_COOKIE } from '../services/csrf.js'
 import { upsertUser, startSession, shapeUser, getUserById, hashEmail } from '../services/users.js'
 import { getAccountValue, isEmancipationRequired } from '../services/account-value.js'
-import { users } from '../services/db.js'
+import { users, emailVerifications } from '../services/db.js'
+import { sendVerificationEmail } from '../services/email.js'
+
+const BASE_URL = () => process.env.AUTH_BASE_URL || 'https://auth.snapie.io'
+
+async function createVerificationToken(emailHash) {
+  const token = crypto.randomBytes(32).toString('hex')
+  const now = new Date()
+  await emailVerifications().insertOne({
+    token,
+    emailHash,
+    createdAt: now,
+    expiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000)
+  })
+  return token
+}
 
 const router = Router()
 
@@ -42,7 +58,8 @@ router.post('/google', asyncMw(async (req, res) => {
     providerId: googleUser.sub,
     emailHash,
     name: googleUser.name || null,
-    picture: googleUser.picture || null
+    picture: googleUser.picture || null,
+    emailVerified: true
   })
 
   const shaped = startSession(res, user, googleUser.email)
@@ -65,9 +82,14 @@ router.post('/email/register', asyncMw(async (req, res) => {
   const emailHash = hashEmail(email)
   const providerId = emailHash
 
-  // Check if already registered
   const existing = await users().findOne({ provider: 'email', providerId })
   if (existing) {
+    if (!existing.emailVerified) {
+      // Resend verification rather than revealing the account exists
+      const token = await createVerificationToken(emailHash)
+      await sendVerificationEmail(email, token)
+      return res.status(202).json({ pending: true })
+    }
     return res.status(409).json({ error: 'email_already_registered' })
   }
 
@@ -78,17 +100,60 @@ router.post('/email/register', asyncMw(async (req, res) => {
     providerId,
     emailHash,
     name: null,
-    picture: null
+    picture: null,
+    emailVerified: false
   })
 
-  // Store passwordHash
-  await users().updateOne(
-    { _id: user._id },
-    { $set: { passwordHash } }
-  )
+  await users().updateOne({ _id: user._id }, { $set: { passwordHash } })
 
-  const shaped = startSession(res, user, email)
-  res.status(201).json({ user: shaped })
+  const token = await createVerificationToken(emailHash)
+  await sendVerificationEmail(email, token)
+
+  res.status(202).json({ pending: true })
+}))
+
+// GET /api/auth/email/verify?token=xxx  (link from email)
+router.get('/email/verify', asyncMw(async (req, res) => {
+  const { token } = req.query
+  if (!token) return res.redirect(`/?error=invalid_token`)
+
+  const record = await emailVerifications().findOneAndDelete({ token })
+  if (!record) return res.redirect(`/?error=invalid_token`)
+
+  const user = await users().findOneAndUpdate(
+    { provider: 'email', emailHash: record.emailHash },
+    { $set: { emailVerified: true, updatedAt: new Date() } },
+    { returnDocument: 'after' }
+  )
+  if (!user) return res.redirect(`/?error=invalid_token`)
+
+  // Recover the plaintext email from the JWT-less context isn't possible here,
+  // so we start a session without the email claim — it's cosmetic only.
+  startSession(res, user, null)
+  res.redirect('/manage.html')
+}))
+
+// POST /api/auth/email/resend — resend verification email
+router.post('/email/resend', asyncMw(async (req, res) => {
+  const { email } = req.body
+  if (!email || typeof email !== 'string') {
+    return res.status(400).json({ error: 'email required' })
+  }
+
+  const emailHash = hashEmail(email)
+  const user = await users().findOne({ provider: 'email', emailHash })
+
+  // Always return 200 to avoid email enumeration
+  if (!user || user.emailVerified) {
+    return res.json({ ok: true })
+  }
+
+  // Delete any existing pending tokens for this email before issuing a new one
+  await emailVerifications().deleteMany({ emailHash })
+  const token = await createVerificationToken(emailHash)
+  await sendVerificationEmail(email, token)
+
+  res.json({ ok: true })
 }))
 
 // POST /api/auth/email/login
@@ -109,6 +174,10 @@ router.post('/email/login', asyncMw(async (req, res) => {
     return res.status(401).json({ error: 'invalid_credentials' })
   }
 
+  if (!user.emailVerified) {
+    return res.status(403).json({ error: 'email_not_verified' })
+  }
+
   const shaped = startSession(res, user, email)
   res.json({ user: shaped })
 }))
@@ -117,6 +186,15 @@ router.post('/email/login', asyncMw(async (req, res) => {
 router.get('/me', authMiddleware, asyncMw(async (req, res) => {
   const user = await getUserById(req.user.userId)
   if (!user) return res.status(401).json({ error: 'Unauthorized' })
+
+  // Bootstrap: auto-grant admin if email matches ADMIN_EMAILS env var
+  const adminEmails = (process.env.ADMIN_EMAILS || '')
+    .split(',').map(e => e.trim().toLowerCase()).filter(Boolean)
+  const userEmail = req.user.email || null
+  if (adminEmails.length && userEmail && adminEmails.includes(userEmail.toLowerCase()) && !user.isAdmin) {
+    await users().updateOne({ _id: user._id }, { $set: { isAdmin: true } })
+    user.isAdmin = true
+  }
 
   // Refresh CSRF if missing
   if (!req.cookies?.[CSRF_COOKIE]) {

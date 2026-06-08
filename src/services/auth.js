@@ -95,7 +95,7 @@ export async function authMiddleware(req, res, next) {
   const oid = toOid(decoded.userId)
   if (!oid) return res.status(401).json({ error: 'Unauthorized' })
 
-  const row = await users().findOne({ _id: oid }, { projection: { sessionMinIat: 1 } })
+  const row = await users().findOne({ _id: oid }, { projection: { sessionMinIat: 1, isAdmin: 1 } })
   if (!row) return res.status(401).json({ error: 'Unauthorized' })
 
   if ((row.sessionMinIat || 0) > (decoded.iat || 0)) {
@@ -103,6 +103,7 @@ export async function authMiddleware(req, res, next) {
   }
 
   req.user = decoded
+  req.user.isAdmin = row.isAdmin || false
   next()
 }
 
