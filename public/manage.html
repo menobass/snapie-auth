@@ -763,7 +763,7 @@
           return
         }
         try {
-          await api('POST', '/link/confirm', { hiveUsername: username, signature: response.result, challenge: challengeText })
+          await api('POST', '/link/confirm', { username, signature: response.result, challenge: challengeText })
           const me = await checkAuth()
           if (me?.user) {
             currentUser = me.user
@@ -784,7 +784,7 @@
       if (!username || !signature || !challengeText) return
       setLoading(btn, true)
       try {
-        await api('POST', '/link/confirm', { hiveUsername: username, signature, challenge: challengeText })
+        await api('POST', '/link/confirm', { username, signature, challenge: challengeText })
         const me = await checkAuth()
         if (me?.user) {
           currentUser = me.user
