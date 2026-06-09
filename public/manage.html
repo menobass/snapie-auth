@@ -753,7 +753,7 @@
       document.getElementById('custodial-provider').textContent = currentUser.provider || '—'
       try {
         const data = await api('GET', '/account/value')
-        document.getElementById('custodial-value').textContent = formatUsd(data.totalUsd)
+        document.getElementById('custodial-value').textContent = formatUsd(data.totalValueUsd)
       } catch {
         document.getElementById('custodial-value').textContent = '—'
       }

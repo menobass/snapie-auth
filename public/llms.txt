@@ -1,5 +1,5 @@
 # Snapie Auth — LLM Integration Reference
-# Version: 1.3 | Updated: 2026-06-08
+# Version: 1.4 | Updated: 2026-06-09
 # Base URL: https://auth.snapie.io/api
 
 Snapie Auth is a Hive blockchain account gateway and signing proxy.
@@ -192,23 +192,24 @@ GET  /account/eligibility       → { canCreate, canLinkExisting, reason, sponso
 GET  /account/check-username/:u → { available, reason? }
 POST /account/create            → { jobId, sponsored }   [CSRF]
 GET  /account/job/:jobId        → { status, txId, error }
-GET  /account/value             → { hive, hbd, hp, totalUsd, emancipationRequired }
+GET  /account/value             → { hiveBalance, hbdBalance, vestingShares, hiveValueUsd, hbdValueUsd, vestingValueUsd, totalValueUsd, emancipationRequired }
 
 POST /link/verify-challenge     → { challenge }          [CSRF]
 POST /link/confirm              → { ok, hiveUsername }   [CSRF]
 
-POST /hive/sign-message         → { signature, account } or { needsClientSigning, message, account }  [CSRF]
-  Body: { message: string (max 512 chars) }
-  Custodial: server signs with the user's posting key and returns the signature.
-  Emancipated: returns needsClientSigning=true — client must sign via Keychain/AIOha.
-  Use for: challenge-response identity verification, feature access gates, chat auth.
-
-POST /hive/broadcast            → { txId } or { needsClientSigning, unsignedOp }  [CSRF]
-POST /hive/transfer             → same                   [CSRF]
-POST /hive/power-up             → same                   [CSRF]
-POST /hive/power-down           → same                   [CSRF]
-POST /hive/delegate             → same                   [CSRF]
-POST /hive/claim-rewards        → { txId }               [CSRF]
+POST /hive/sign-message           → { signature, account } or { needsClientSigning, message, account }  [CSRF]
+POST /hive/limit-order-create     → { txId } or { needsClientSigning, unsignedOp }  [CSRF]
+POST /hive/limit-order-cancel     → { txId } or { needsClientSigning, unsignedOp }  [CSRF]
+POST /hive/broadcast              → { txId } or { needsClientSigning, unsignedOp }  [CSRF]
+POST /hive/transfer               → { txId } or { needsClientSigning, unsignedOp }  [CSRF]
+POST /hive/transfer-to-savings    → { txId } or { needsClientSigning, unsignedOp }  [CSRF]
+POST /hive/transfer-from-savings  → { txId } or { needsClientSigning, unsignedOp }  [CSRF]
+POST /hive/power-up               → { txId } or { needsClientSigning, unsignedOp }  [CSRF]
+POST /hive/power-down             → { txId } or { needsClientSigning, unsignedOp }  [CSRF]
+POST /hive/delegate               → { txId } or { needsClientSigning, unsignedOp }  [CSRF]
+POST /hive/convert                → { txId } or { needsClientSigning, unsignedOp }  [CSRF]
+POST /hive/collateralized-convert → { txId } or { needsClientSigning, unsignedOp }  [CSRF]
+POST /hive/claim-rewards          → { txId }                                         [CSRF]
 
 GET  /emancipate/status         → { custodyMode, totalUsd, thresholdUsd }
 POST /emancipate/start          → { keys: { owner, active, posting, memo } } [CSRF]
@@ -263,29 +264,194 @@ Common codes:
   /api/account/create       5 req / 1 hr
   /api/account/check-*      40 req / 1 min
   /api/hive/sign-message    30 req / 1 min
-  /api/hive/broadcast       60 req / 1 min
-  /api/hive/transfer        10 req / 1 min
+  /api/hive/limit-order-create       10 req / 1 min
+  /api/hive/limit-order-cancel       10 req / 1 min
+  /api/hive/broadcast                60 req / 1 min
+  /api/hive/transfer                 10 req / 1 min
+  /api/hive/transfer-to-savings      10 req / 1 min
+  /api/hive/transfer-from-savings    10 req / 1 min
+  /api/hive/convert                  10 req / 1 min
+  /api/hive/collateralized-convert   10 req / 1 min
   /api/emancipate/*         5 req / 1 hr
 
-## Hive Operations Allowed via /hive/broadcast
-vote, comment, delete_comment, custom_json, claim_reward_balance
+## Asset String Format
 
-Active-level ops (transfer, power-up, power-down, delegate):
-  Custodial   → server signs and broadcasts
-  Emancipated → returns { needsClientSigning: true, unsignedOp }
+All monetary amounts are strings — never plain numbers.
+  HIVE / HBD:  3 decimal places + currency  →  "1.000 HIVE"  "0.500 HBD"
+  VESTS:       6 decimal places + currency  →  "1.000000 VESTS"
+Examples of WRONG formats: 1.0, "1", "1.0 HIVE", 1.000, { amount: 1, currency: "HIVE" }
+
+## Active-Level Operations
+
+All /hive/* endpoints except /hive/broadcast and /hive/sign-message are active-level.
+All request body fields are camelCase. All endpoints require session cookie + x-csrf-token.
+Response pattern:
+  Custodial   → { "txId": "abc123..." }   (server decrypts active key and broadcasts)
+  Emancipated → { "needsClientSigning": true, "unsignedOp": ["op_name", {...}] }
+                Client must sign unsignedOp via Keychain/AIOha and broadcast independently.
+
+### POST /hive/transfer
+```json
+{ "to": "alice", "amount": "1.000 HIVE", "memo": "optional" }
+```
+  to:     required, 3–16 chars
+  amount: required, "N.NNN HIVE" or "N.NNN HBD"
+  memo:   optional, max 2048 chars (default "")
+
+### POST /hive/transfer-to-savings
+```json
+{ "amount": "1.000 HIVE", "to": "alice", "memo": "optional" }
+```
+  amount: required, "N.NNN HIVE" or "N.NNN HBD"
+  to:     optional — defaults to the authenticated user's own account
+  memo:   optional, max 2048 chars (default "")
+No lockup on deposit. Savings earn interest. Withdrawals take 3 days.
+
+### POST /hive/transfer-from-savings
+```json
+{ "amount": "1.000 HIVE", "to": "alice", "memo": "optional", "requestId": 1717200000 }
+```
+  amount:    required, "N.NNN HIVE" or "N.NNN HBD"
+  to:        optional — defaults to self
+  memo:      optional, max 2048 chars (default "")
+  requestId: optional integer — auto-generated from Math.floor(Date.now()/1000) if omitted
+             Must be unique per account. Re-using an id for the same account will fail on-chain.
+Funds arrive after 3 days.
+
+### POST /hive/convert  (HBD → HIVE)
+```json
+{ "amount": "1.000 HBD", "requestId": 1717200000 }
+```
+  amount:    required, "N.NNN HBD" only — NOT HIVE
+  requestId: optional integer, auto-generated if omitted
+Takes ~3.5 days; settles at the median price feed at that time.
+
+### POST /hive/collateralized-convert  (HIVE → HBD, instant)
+```json
+{ "amount": "1.000 HIVE", "requestId": 1717200000 }
+```
+  amount:    required, "N.NNN HIVE" only — NOT HBD
+  requestId: optional integer, auto-generated if omitted
+HBD delivered to wallet immediately. Excess collateral HIVE returned after ~3.5 days.
+
+### POST /hive/limit-order-create  (internal market trade)
+```json
+{
+  "sell":             "1.000 HIVE",
+  "receive":          "0.450 HBD",
+  "fillOrKill":       false,
+  "expiresInSeconds": 3600,
+  "orderId":          1717200000
+}
+```
+  sell:             required, "N.NNN HIVE" or "N.NNN HBD"
+  receive:          required, opposite currency to sell — "N.NNN HIVE" or "N.NNN HBD"
+  fillOrKill:       optional boolean (default false)
+                    false = resting limit order — sits on book until filled or expired
+                    true  = instant market swap — cancels immediately if not fully fillable
+  expiresInSeconds: optional integer, default 3600, max 2592000 (30 days). Ignored if fillOrKill=true.
+  orderId:          optional uint32, auto-generated from timestamp if omitted. Must be unique per account.
+
+IMPORTANT: a fillOrKill=true order that fails to fill still returns { txId } — the transaction
+went through but no swap occurred. To confirm a fill, verify account balances changed or
+check dhive client.database.findAccountOrders(username, 0, 10) returns no matching orderId.
+
+### POST /hive/limit-order-cancel
+```json
+{ "orderId": 1717200000 }
+```
+  orderId: required integer — must match an open order owned by the authenticated user.
+
+### POST /hive/power-up
+```json
+{ "amount": "1.000 HIVE" }
+```
+Stakes HIVE as Hive Power. Amount must be "N.NNN HIVE" (3 decimals).
+
+### POST /hive/power-down
+```json
+{ "amount": "1.000000 VESTS" }
+```
+Amount must be "N.NNNNNN VESTS" (6 decimals) — NOT HIVE. Unstaking takes 13 weeks.
+To convert HP → VESTS: vests = hp * total_vesting_shares / total_vesting_fund_hive
+(from dhive client.database.getDynamicGlobalProperties())
+
+### POST /hive/delegate
+```json
+{ "delegatee": "alice", "amount": "1.000000 VESTS" }
+```
+  delegatee: required, target account username
+  amount:    required, "N.NNNNNN VESTS" — set to "0.000000 VESTS" to remove delegation
+
+### POST /hive/claim-rewards
+No request body. Server reads pending rewards from the chain automatically.
+Returns { txId } on success.
+
+## Posting-Level Broadcast (/hive/broadcast)
+
+Allowed op types: vote, comment, delete_comment, custom_json, claim_reward_balance
+Request body: { "op": ["op_type", { ...fields }] }
+The op field is a 2-element array — NOT { op: "comment", ...fields }, NOT [["comment", {...}]].
+
+Example — root post:
+```json
+{
+  "op": ["comment", {
+    "parent_author":  "",
+    "parent_permlink": "hive",
+    "author":          "alice",
+    "permlink":        "my-post-slug",
+    "title":           "My Post Title",
+    "body":            "Post content here.",
+    "json_metadata":   "{\"tags\":[\"hive\"],\"app\":\"myapp/1.0\"}"
+  }]
+}
+```
+  parent_author:  "" for a root post; the replied-to author for a comment
+  json_metadata:  must be a JSON-encoded STRING, not an object
+  author:         must match the authenticated user's hiveUsername
+
+Example — reply: same as above but parent_author = "bob", parent_permlink = "their-post-slug", title = ""
+
+Example — vote:
+```json
+{ "op": ["vote", { "voter": "alice", "author": "bob", "permlink": "some-post", "weight": 10000 }] }
+```
+  weight: -10000 to 10000 (10000 = 100% upvote, -10000 = full downvote, 0 = remove vote)
+
+Example — custom_json:
+```json
+{
+  "op": ["custom_json", {
+    "required_auths":         [],
+    "required_posting_auths": ["alice"],
+    "id":                     "myapp",
+    "json":                   "{\"action\":\"follow\",\"target\":\"bob\"}"
+  }]
+}
+```
+  json: must be a JSON-encoded STRING, max 8192 bytes
 
 ## Message Signing (/hive/sign-message)
-Signs an arbitrary message (max 512 chars) with the user's Hive posting key.
-Uses SHA-256 hash of the message + secp256k1 signing (dhive cryptoUtils.sha256 + PrivateKey.sign).
-The resulting signature is compatible with hive-js / dhive verifySignature.
 
-Typical flow (challenge-response):
-  1. Your app generates a nonce/challenge (e.g. UUID or timestamp-based string)
-  2. POST /api/hive/sign-message { message: challenge }
-  3. Your app verifies: verifySignature(account, challenge, signature, onChainPostingPubKey)
-  4. On success: grant access to the feature
+```json
+{ "message": "your-challenge-string" }
+```
+  message: required string, max 512 chars
 
-Emancipated users return needsClientSigning=true — handle with:
+Custodial response:   { "signature": "abc...", "account": "alice" }
+Emancipated response: { "needsClientSigning": true, "message": "...", "account": "alice" }
+
+Signs with SHA-256 + secp256k1 (dhive cryptoUtils.sha256 + PrivateKey.sign).
+Compatible with hive-js / dhive verifySignature.
+
+Typical challenge-response flow:
+  1. Your app generates a nonce (UUID or timestamp string)
+  2. POST /api/hive/sign-message { message: nonce }
+  3. Verify: verifySignature(account, nonce, signature, onChainPostingPubKey)
+  4. On success: grant access
+
+Emancipated client signing:
   Keychain: window.hive_keychain.requestSignBuffer(account, message, 'Posting', cb)
   AIOha:    aioha.signMessage(message, KeyTypes.Posting)
 

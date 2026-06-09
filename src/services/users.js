@@ -51,6 +51,7 @@ export async function getUserById(id) {
 export function shapeUser(user, extra = {}) {
   return {
     id: user._id.toString(),
+    provider: user.provider || null,
     name: user.name || null,
     picture: user.picture || null,
     hiveUsername: user.hiveUsername || null,
