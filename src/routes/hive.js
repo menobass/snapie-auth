@@ -12,15 +12,18 @@ import { ObjectId } from 'mongodb'
 const router = Router()
 
 const POSTING_OPS = new Set([
-  'vote', 'comment', 'delete_comment', 'custom_json', 'claim_reward_balance'
+  'vote', 'comment', 'delete_comment', 'custom_json', 'claim_reward_balance',
+  'account_update2'
 ])
 
 const NEVER_SIGN = new Set([
-  'account_update', 'account_update2', 'recover_account',
+  'account_update', 'recover_account',
   'witness_update', 'witness_vote', 'feed_publish',
   'account_witness_vote', 'account_witness_proxy',
   'proposal_create', 'proposal_delete', 'update_proposal_votes'
 ])
+
+const ACCOUNT_UPDATE2_KEY_FIELDS = ['owner', 'active', 'posting', 'memo_key', 'json_metadata']
 
 async function logOp(userId, hiveUsername, opType, opClass, custodyMode, txId, success, error, ip) {
   await broadcastLog().insertOne({
@@ -59,6 +62,14 @@ router.post('/broadcast', authMiddleware, csrfMiddleware, asyncMw(async (req, re
   const opType = op[0]
   if (NEVER_SIGN.has(opType) || !POSTING_OPS.has(opType)) {
     return res.status(403).json({ error: 'op_not_allowed' })
+  }
+
+  if (opType === 'account_update2') {
+    const body = op[1]
+    const forbidden = ACCOUNT_UPDATE2_KEY_FIELDS.filter(f => body[f] !== undefined && body[f] !== null && body[f] !== '')
+    if (forbidden.length > 0) {
+      return res.status(403).json({ error: 'op_not_allowed', detail: `account_update2 may only set posting_json_metadata; forbidden fields: ${forbidden.join(', ')}` })
+    }
   }
 
   try {
