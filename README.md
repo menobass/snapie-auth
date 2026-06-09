@@ -102,7 +102,18 @@ server {
 }
 ```
 
-### systemd service
+### PM2 (recommended)
+
+```bash
+pm2 start src/index.js --name snapie-auth
+pm2 save
+pm2 startup   # follow the printed command to enable on boot
+```
+
+Logs: `pm2 logs snapie-auth`  
+Restart: `pm2 restart snapie-auth`
+
+### systemd service (alternative)
 
 ```ini
 [Unit]
@@ -111,7 +122,7 @@ After=network.target mongod.service
 
 [Service]
 User=meno
-WorkingDirectory=/home/meno/snapie-auth
+WorkingDirectory=/var/www/snapie-auth
 ExecStart=/usr/bin/node src/index.js
 Restart=always
 RestartSec=5
@@ -181,29 +192,48 @@ Machine-readable contract at `/llms.txt`.
 | Method | Path | Description |
 |---|---|---|
 | POST | `/api/auth/google` | Google sign-in |
-| POST | `/api/auth/email/register` | Email registration |
+| POST | `/api/auth/email/register` | Email registration — sends verification email, returns 202 |
 | POST | `/api/auth/email/login` | Email login |
-| GET | `/api/auth/me` | Current session |
+| POST | `/api/auth/email/resend` | Resend verification email |
+| GET  | `/api/auth/email/verify` | Email verification link handler (redirects to /manage.html) |
+| GET  | `/api/auth/me` | Current session |
 | POST | `/api/auth/logout` | Clear cookies |
 
 ### Account
 | Method | Path | Description |
 |---|---|---|
-| GET | `/api/account/eligibility` | Check if user can create a free account |
-| GET | `/api/account/check-username/:u` | Username availability |
+| GET  | `/api/account/eligibility` | Check if user can create a free account |
+| GET  | `/api/account/check-username/:u` | Username availability |
 | POST | `/api/account/create` | Create Hive account |
-| GET | `/api/account/job/:jobId` | Poll creation status |
+| GET  | `/api/account/job/:jobId` | Poll creation status |
+| GET  | `/api/account/value` | Account balance and USD value; includes `emancipationRequired` |
+
+### Link existing account
+| Method | Path | Description |
+|---|---|---|
+| POST | `/api/link/verify-challenge` | Issue a challenge nonce; returns `{ challenge, snapieAccount }` |
+| POST | `/api/link/confirm` | Confirm link with signed challenge + username |
 
 ### Hive signing proxy
 | Method | Path | Description |
 |---|---|---|
-| POST | `/api/hive/sign-message` | Sign a challenge with the user's posting key (custodial: server signs; emancipated: client signs) |
-| POST | `/api/hive/broadcast` | Posting-level ops — custodial: signed; emancipated: unsigned op returned |
-| POST | `/api/hive/transfer` | Active-level transfer |
-| POST | `/api/hive/power-up` | Active-level power up |
-| POST | `/api/hive/power-down` | Active-level power down |
-| POST | `/api/hive/delegate` | Active-level RC/VP delegation |
+| POST | `/api/hive/sign-message` | Sign a challenge with posting key — custodial: server signs; emancipated: returns `{ needsClientSigning, message, account, keyType }` |
+| POST | `/api/hive/broadcast` | Posting-level ops (vote, comment, custom_json, etc.) — always proxied for all users |
+| POST | `/api/hive/transfer` | Transfer HIVE or HBD |
+| POST | `/api/hive/transfer-to-savings` | Move funds to savings |
+| POST | `/api/hive/transfer-from-savings` | Withdraw from savings (3-day delay) |
+| POST | `/api/hive/power-up` | Stake HIVE as Hive Power |
+| POST | `/api/hive/power-down` | Begin 13-week unstaking |
+| POST | `/api/hive/delegate` | Delegate Hive Power (set to 0 to remove) |
+| POST | `/api/hive/convert` | Convert HBD → HIVE (~3.5 days, median price) |
+| POST | `/api/hive/collateralized-convert` | Convert HIVE → HBD instantly |
+| POST | `/api/hive/limit-order-create` | Place a limit or market order on the internal HIVE/HBD market |
+| POST | `/api/hive/limit-order-cancel` | Cancel an open limit order |
 | POST | `/api/hive/claim-rewards` | Claim pending reward balances |
+
+Active-level ops (everything except `broadcast`, `claim-rewards`, and `sign-message`) return:
+- **Custodial**: `{ txId }` — signed and broadcast by the server
+- **Emancipated**: `{ needsClientSigning: true, unsignedOp, account, keyType: "active" }` — hand off to Aioha or Keychain
 
 ### Admin (session, `isAdmin` required)
 | Method | Path | Description |
@@ -266,7 +296,7 @@ When Alice registers with that email and creates an account, the token is consum
 Custodial users can export their private keys at any time via `POST /api/emancipate/start`. Snapie deletes its copy immediately. Once emancipated:
 
 - Posting-level ops (vote, comment, custom_json) are still proxied via Snapie's posting authority
-- Active-level ops (transfer, power-up) return an unsigned op for the user to sign with their own wallet (Keychain, etc.)
+- Active-level ops (transfer, power-up, etc.) return `{ needsClientSigning: true, unsignedOp, account, keyType: "active" }` for the consuming app to hand off to Aioha or Keychain
 
 If `EMANCIPATION_THRESHOLD_USD` is set, users whose account value exceeds the threshold are blocked from posting until they emancipate.
 

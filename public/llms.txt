@@ -24,7 +24,11 @@ posting, memo). Keys are AES-256-GCM encrypted with a server-derived key.
 The user never sees or holds keys until voluntary emancipation.
 
 EMANCIPATED: User holds their own keys. Snapie only has posting authority
-(granted by the user). Active-level ops return `{ needsClientSigning: true }`.
+(granted by the user). Active-level ops return:
+  { needsClientSigning: true, unsignedOp: [...], account: "alice", keyType: "active" }
+Sign-message returns:
+  { needsClientSigning: true, message: "...", account: "alice", keyType: "posting" }
+The consuming app should hand these fields directly to Aioha or Keychain.
 
 SPONSOR TOKEN: A one-time token tied to an email hash. When redeemed, it
 bypasses the daily free-account quota (global + per-IP) and the
@@ -194,22 +198,25 @@ POST /account/create            → { jobId, sponsored }   [CSRF]
 GET  /account/job/:jobId        → { status, txId, error }
 GET  /account/value             → { hiveBalance, hbdBalance, vestingShares, hiveValueUsd, hbdValueUsd, vestingValueUsd, totalValueUsd, emancipationRequired }
 
-POST /link/verify-challenge     → { challenge }          [CSRF]
-POST /link/confirm              → { ok, hiveUsername }   [CSRF]
+POST /link/verify-challenge     → { challenge, snapieAccount }  [CSRF]
+POST /link/confirm              → { ok, hiveUsername }          [CSRF]
 
-POST /hive/sign-message           → { signature, account } or { needsClientSigning, message, account }  [CSRF]
-POST /hive/limit-order-create     → { txId } or { needsClientSigning, unsignedOp }  [CSRF]
-POST /hive/limit-order-cancel     → { txId } or { needsClientSigning, unsignedOp }  [CSRF]
-POST /hive/broadcast              → { txId } or { needsClientSigning, unsignedOp }  [CSRF]
-POST /hive/transfer               → { txId } or { needsClientSigning, unsignedOp }  [CSRF]
-POST /hive/transfer-to-savings    → { txId } or { needsClientSigning, unsignedOp }  [CSRF]
-POST /hive/transfer-from-savings  → { txId } or { needsClientSigning, unsignedOp }  [CSRF]
-POST /hive/power-up               → { txId } or { needsClientSigning, unsignedOp }  [CSRF]
-POST /hive/power-down             → { txId } or { needsClientSigning, unsignedOp }  [CSRF]
-POST /hive/delegate               → { txId } or { needsClientSigning, unsignedOp }  [CSRF]
-POST /hive/convert                → { txId } or { needsClientSigning, unsignedOp }  [CSRF]
-POST /hive/collateralized-convert → { txId } or { needsClientSigning, unsignedOp }  [CSRF]
-POST /hive/claim-rewards          → { txId }                                         [CSRF]
+POST /hive/sign-message           → custodial: { signature, account }
+                                    emancipated: { needsClientSigning: true, message, account, keyType: "posting" }  [CSRF]
+POST /hive/limit-order-create     → custodial: { txId }
+                                    emancipated: { needsClientSigning: true, unsignedOp, account, keyType: "active" }  [CSRF]
+POST /hive/limit-order-cancel     → custodial: { txId }
+                                    emancipated: { needsClientSigning: true, unsignedOp, account, keyType: "active" }  [CSRF]
+POST /hive/broadcast              → { txId }  (posting ops; always proxied for all users)  [CSRF]
+POST /hive/transfer               → custodial: { txId }  emancipated: { needsClientSigning: true, unsignedOp, account, keyType: "active" }  [CSRF]
+POST /hive/transfer-to-savings    → custodial: { txId }  emancipated: { needsClientSigning: true, unsignedOp, account, keyType: "active" }  [CSRF]
+POST /hive/transfer-from-savings  → custodial: { txId }  emancipated: { needsClientSigning: true, unsignedOp, account, keyType: "active" }  [CSRF]
+POST /hive/power-up               → custodial: { txId }  emancipated: { needsClientSigning: true, unsignedOp, account, keyType: "active" }  [CSRF]
+POST /hive/power-down             → custodial: { txId }  emancipated: { needsClientSigning: true, unsignedOp, account, keyType: "active" }  [CSRF]
+POST /hive/delegate               → custodial: { txId }  emancipated: { needsClientSigning: true, unsignedOp, account, keyType: "active" }  [CSRF]
+POST /hive/convert                → custodial: { txId }  emancipated: { needsClientSigning: true, unsignedOp, account, keyType: "active" }  [CSRF]
+POST /hive/collateralized-convert → custodial: { txId }  emancipated: { needsClientSigning: true, unsignedOp, account, keyType: "active" }  [CSRF]
+POST /hive/claim-rewards          → { txId }  (posting-level; always proxied)  [CSRF]
 
 GET  /emancipate/status         → { custodyMode, totalUsd, thresholdUsd }
 POST /emancipate/start          → { keys: { owner, active, posting, memo } } [CSRF]
@@ -291,8 +298,11 @@ Response pattern:
                 includes { "emancipationRequired": true, "accountValueUsd": 27.50 }.
                 The operation succeeds regardless — this is a warning, not a block.
                 Surface it as: "Your account value has grown. Consider exporting your keys."
-  Emancipated → { "needsClientSigning": true, "unsignedOp": ["op_name", {...}] }
+  Emancipated → { "needsClientSigning": true, "unsignedOp": ["op_name", {...}], "account": "alice", "keyType": "active" }
                 Client must sign unsignedOp via Keychain/AIOha and broadcast independently.
+                account and keyType are provided so the app can call:
+                  Aioha:   aioha.signAndBroadcastTx(account, [unsignedOp], KeyTypes.Active)
+                  Keychain: window.hive_keychain.requestBroadcast(account, [unsignedOp], 'active', cb)
 
 emancipationRequired is also returned by GET /auth/me and GET /account/value.
 Check it on page load so you can show a persistent banner without waiting for a transaction.
@@ -447,7 +457,7 @@ Example — custom_json:
   message: required string, max 512 chars
 
 Custodial response:   { "signature": "abc...", "account": "alice" }
-Emancipated response: { "needsClientSigning": true, "message": "...", "account": "alice" }
+Emancipated response: { "needsClientSigning": true, "message": "...", "account": "alice", "keyType": "posting" }
 
 Signs with SHA-256 + secp256k1 (dhive cryptoUtils.sha256 + PrivateKey.sign).
 Compatible with hive-js / dhive verifySignature.
@@ -461,6 +471,8 @@ Typical challenge-response flow:
 Emancipated client signing:
   Keychain: window.hive_keychain.requestSignBuffer(account, message, 'Posting', cb)
   AIOha:    aioha.signMessage(message, KeyTypes.Posting)
+
+The response always includes account and keyType so the app needs no additional context.
 
 ## Cookies
   snapieauth_session   httpOnly, Secure, SameSite=Lax  — JWT RS256
