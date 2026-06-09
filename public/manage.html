@@ -471,6 +471,7 @@
     const reasonMsg = r => REASON_MSG[r] || r || 'Not eligible for a free account.'
     let pollInterval = null
     let challengeText = null
+    let snapieAccount = null
 
     // ── Helpers ─────────────────────────────────────────────────────
     function showState(id) {
@@ -726,6 +727,7 @@
       try {
         const data = await api('POST', '/link/verify-challenge', { hiveUsername: username })
         challengeText = data.challenge
+        snapieAccount = data.snapieAccount
         document.getElementById('challenge-box').textContent = data.challenge
         document.getElementById('challenge-box').style.display = 'block'
         document.getElementById('link-sign-section').classList.remove('hidden')
@@ -751,29 +753,52 @@
     document.getElementById('keychain-sign-btn').addEventListener('click', () => {
       const btn = document.getElementById('keychain-sign-btn')
       const username = document.getElementById('link-username-input').value.trim()
-      if (!username || !challengeText) return
+      if (!username || !challengeText || !snapieAccount) return
       setLoading(btn, true)
 
-      window.hive_keychain.requestSignBuffer(username, challengeText, 'Posting', async response => {
-        if (!response.success) {
+      // Step 1: sign the challenge to prove account ownership
+      window.hive_keychain.requestSignBuffer(username, challengeText, 'Posting', signResponse => {
+        if (!signResponse.success) {
           setLoading(btn, false)
-          if (response.error !== 'user_cancel') {
-            showAlert(document.getElementById('main-alert'), response.error || 'Keychain signing failed.', 'danger')
+          if (signResponse.error !== 'user_cancel') {
+            showAlert(document.getElementById('main-alert'), signResponse.error || 'Keychain signing failed.', 'danger')
           }
           return
         }
-        try {
-          await api('POST', '/link/confirm', { username, signature: response.result, challenge: challengeText })
-          const me = await checkAuth()
-          if (me?.user) {
-            currentUser = me.user
-            loadEmancipatedState()
-            showState('state-emancipated')
+
+        const signature = signResponse.result
+        btn.textContent = 'Granting posting authority…'
+
+        // Step 2: broadcast posting authority grant for @snapie
+        window.hive_keychain.requestAddAccountAuthority(username, snapieAccount, 'Posting', 1, async authResponse => {
+          if (!authResponse.success) {
+            setLoading(btn, false)
+            btn.textContent = 'Sign with Hive Keychain'
+            if (authResponse.error !== 'user_cancel') {
+              showAlert(document.getElementById('main-alert'), authResponse.error || 'Failed to grant posting authority.', 'danger')
+            }
+            return
           }
-        } catch (err) {
-          showAlert(document.getElementById('main-alert'), err.data?.error || 'Link failed.', 'danger')
-          setLoading(btn, false)
-        }
+
+          btn.textContent = 'Confirming on-chain…'
+          // Wait one block (~3 s) for the authority grant to confirm before verifying
+          await new Promise(r => setTimeout(r, 4000))
+
+          // Step 3: confirm the link
+          try {
+            await api('POST', '/link/confirm', { username, signature, challenge: challengeText })
+            const me = await checkAuth()
+            if (me?.user) {
+              currentUser = me.user
+              loadEmancipatedState()
+              showState('state-emancipated')
+            }
+          } catch (err) {
+            showAlert(document.getElementById('main-alert'), err.data?.error || 'Link failed.', 'danger')
+            setLoading(btn, false)
+            btn.textContent = 'Sign with Hive Keychain'
+          }
+        })
       })
     })
 

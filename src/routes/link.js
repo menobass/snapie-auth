@@ -21,7 +21,7 @@ router.post('/verify-challenge', authMiddleware, asyncMw(async (req, res) => {
     createdAt: new Date()
   })
 
-  res.json({ challenge })
+  res.json({ challenge, snapieAccount: process.env.SNAPIE_ACCOUNT })
 }))
 
 // POST /api/link/confirm
