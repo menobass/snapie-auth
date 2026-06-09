@@ -24,7 +24,8 @@ export async function upsertUser({ provider, providerId, emailHash, name, pictur
         provider,
         providerId,
         emailHash: emailHash || null,
-        hiveUsername: null,
+        // hiveUsername intentionally omitted — sparse unique index skips absent fields;
+        // setting null would be indexed and block a second email-only user
         custodyMode: null,
         encryptedKeys: null,
         passwordHash: null,

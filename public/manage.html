@@ -294,16 +294,25 @@
             <div id="challenge-box"></div>
 
             <div id="link-sign-section" class="hidden">
-              <div class="alert alert-info">
-                Sign the challenge above with Hive Keychain or any wallet, then paste the signature below.
-                <br/><br/>
-                <strong>Keychain:</strong> Use "Request Posting Key Sign" with the message above.
+              <!-- Keychain one-tap (shown when extension is detected) -->
+              <div id="keychain-cta" class="hidden">
+                <button class="btn btn-primary btn-full" id="keychain-sign-btn">Sign with Hive Keychain</button>
+                <p style="text-align:center;margin-top:10px;">
+                  <a href="#" id="show-manual-link" style="font-size:0.78rem;color:var(--text-3);">sign manually instead</a>
+                </p>
               </div>
-              <div class="form-group">
-                <label>Signature</label>
-                <input type="text" id="link-signature" placeholder="hex signature…" />
+
+              <!-- Manual fallback -->
+              <div id="manual-sign-section">
+                <div class="alert alert-info">
+                  Sign the challenge above with your Hive posting key and paste the hex signature below.
+                </div>
+                <div class="form-group">
+                  <label>Signature</label>
+                  <input type="text" id="link-signature" placeholder="hex signature…" />
+                </div>
+                <button class="btn btn-primary btn-full" id="link-confirm-btn">Link Account</button>
               </div>
-              <button class="btn btn-primary btn-full" id="link-confirm-btn">Link Account</button>
             </div>
           </div>
         </div>
@@ -720,11 +729,52 @@
         document.getElementById('challenge-box').textContent = data.challenge
         document.getElementById('challenge-box').style.display = 'block'
         document.getElementById('link-sign-section').classList.remove('hidden')
+
+        // Show Keychain button if the extension is present, otherwise show manual form
+        if (window.hive_keychain) {
+          document.getElementById('keychain-cta').classList.remove('hidden')
+          document.getElementById('manual-sign-section').classList.add('hidden')
+        }
       } catch (err) {
         showAlert(document.getElementById('main-alert'), err.data?.error || 'Failed to generate challenge.', 'danger')
       } finally {
         setLoading(btn, false)
       }
+    })
+
+    document.getElementById('show-manual-link').addEventListener('click', e => {
+      e.preventDefault()
+      document.getElementById('keychain-cta').classList.add('hidden')
+      document.getElementById('manual-sign-section').classList.remove('hidden')
+    })
+
+    document.getElementById('keychain-sign-btn').addEventListener('click', () => {
+      const btn = document.getElementById('keychain-sign-btn')
+      const username = document.getElementById('link-username-input').value.trim()
+      if (!username || !challengeText) return
+      setLoading(btn, true)
+
+      window.hive_keychain.requestSignBuffer(username, challengeText, 'Posting', async response => {
+        if (!response.success) {
+          setLoading(btn, false)
+          if (response.error !== 'user_cancel') {
+            showAlert(document.getElementById('main-alert'), response.error || 'Keychain signing failed.', 'danger')
+          }
+          return
+        }
+        try {
+          await api('POST', '/link/confirm', { hiveUsername: username, signature: response.result, challenge: challengeText })
+          const me = await checkAuth()
+          if (me?.user) {
+            currentUser = me.user
+            loadEmancipatedState()
+            showState('state-emancipated')
+          }
+        } catch (err) {
+          showAlert(document.getElementById('main-alert'), err.data?.error || 'Link failed.', 'danger')
+          setLoading(btn, false)
+        }
+      })
     })
 
     document.getElementById('link-confirm-btn').addEventListener('click', async () => {
