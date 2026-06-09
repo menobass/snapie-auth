@@ -93,7 +93,7 @@ async function activeOp(req, res, opType, buildOp) {
   }
 
   if (user.custodyMode === 'emancipated') {
-    return res.json({ needsClientSigning: true, unsignedOp: op })
+    return res.json({ needsClientSigning: true, unsignedOp: op, account: user.hiveUsername, keyType: 'active' })
   }
 
   if (user.custodyMode !== 'custodial') {
@@ -377,7 +377,7 @@ router.post('/sign-message', authMiddleware, csrfMiddleware, asyncMw(async (req,
   }
 
   if (user.custodyMode === 'emancipated') {
-    return res.json({ needsClientSigning: true, message, account: user.hiveUsername })
+    return res.json({ needsClientSigning: true, message, account: user.hiveUsername, keyType: 'posting' })
   }
 
   if (user.custodyMode !== 'custodial') {
