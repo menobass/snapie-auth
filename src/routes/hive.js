@@ -6,6 +6,7 @@ import { broadcastOps, getAccount, hiveErr, isRcError, signMessage } from '../se
 import { getUserById } from '../services/users.js'
 import { deriveServerKey, decryptKey } from '../services/key-crypto.js'
 import { broadcastLog } from '../services/db.js'
+import { getAccountValue, isEmancipationRequired } from '../services/account-value.js'
 import { ObjectId } from 'mongodb'
 
 const router = Router()
@@ -103,7 +104,19 @@ async function activeOp(req, res, opType, buildOp) {
     const activeWif = getCustodialActiveKey(user)
     const result = await broadcastOps([op], activeWif)
     await logOp(user._id, user.hiveUsername, opType, 'active', 'custodial', result.id, true, null, req.ip)
-    res.json({ txId: result.id })
+
+    // Non-blocking emancipation warning — uses cached price so adds no latency on cache hit.
+    // Lets consuming apps surface an "export your keys" prompt without blocking the operation.
+    const response = { txId: result.id }
+    try {
+      const value = await getAccountValue(user.hiveUsername)
+      if (value && isEmancipationRequired('custodial', value.totalValueUsd)) {
+        response.emancipationRequired = true
+        response.accountValueUsd = value.totalValueUsd
+      }
+    } catch { /* non-fatal — omit the fields if price fetch fails */ }
+
+    res.json(response)
   } catch (err) {
     if (isRcError(err)) {
       await logOp(user._id, user.hiveUsername, opType, 'active', 'custodial', null, false, 'insufficient_rc', req.ip)

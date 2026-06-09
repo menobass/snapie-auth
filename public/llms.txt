@@ -286,9 +286,16 @@ Examples of WRONG formats: 1.0, "1", "1.0 HIVE", 1.000, { amount: 1, currency: "
 All /hive/* endpoints except /hive/broadcast and /hive/sign-message are active-level.
 All request body fields are camelCase. All endpoints require session cookie + x-csrf-token.
 Response pattern:
-  Custodial   → { "txId": "abc123..." }   (server decrypts active key and broadcasts)
+  Custodial   → { "txId": "abc123..." }
+                If the account value exceeds the emancipation threshold, the response also
+                includes { "emancipationRequired": true, "accountValueUsd": 27.50 }.
+                The operation succeeds regardless — this is a warning, not a block.
+                Surface it as: "Your account value has grown. Consider exporting your keys."
   Emancipated → { "needsClientSigning": true, "unsignedOp": ["op_name", {...}] }
                 Client must sign unsignedOp via Keychain/AIOha and broadcast independently.
+
+emancipationRequired is also returned by GET /auth/me and GET /account/value.
+Check it on page load so you can show a persistent banner without waiting for a transaction.
 
 ### POST /hive/transfer
 ```json
