@@ -91,11 +91,11 @@
       padding: 2px 7px;
       border-radius: 4px;
     }
-    .auth-session { background: var(--primary-dim); color: var(--primary); }
-    .auth-csrf { background: rgba(250, 204, 21, 0.1); color: rgb(250, 204, 21); }
+    .auth-session  { background: var(--primary-dim); color: var(--primary); }
+    .auth-csrf     { background: rgba(250, 204, 21, 0.1); color: rgb(250, 204, 21); }
     .auth-internal { background: rgba(139, 92, 246, 0.12); color: rgb(167, 139, 250); }
-    .auth-admin { background: rgba(251, 146, 60, 0.12); color: rgb(251, 146, 60); }
-    .auth-none { background: rgba(74, 222, 128, 0.1); color: var(--success); }
+    .auth-admin    { background: rgba(251, 146, 60, 0.12); color: rgb(251, 146, 60); }
+    .auth-none     { background: rgba(74, 222, 128, 0.1); color: var(--success); }
 
     .intro-grid {
       display: grid;
@@ -135,14 +135,17 @@
   <div class="docs-layout">
     <aside class="sidebar">
       <h3>Overview</h3>
-      <a href="#overview" class="active">Introduction</a>
-      <a href="#auth-cookies">Auth & Cookies</a>
+      <a href="#overview">Introduction</a>
+      <a href="#auth-cookies">Auth &amp; Cookies</a>
+      <a href="#custody-modes">Custody Modes</a>
       <a href="#errors">Error Codes</a>
+      <a href="#assets">Asset Format</a>
 
       <h3>Authentication</h3>
       <a href="#auth-google">Google OAuth</a>
       <a href="#auth-email">Email / Password</a>
       <a href="#auth-me">Session</a>
+      <a href="#auth-logout">Logout</a>
 
       <h3>Account</h3>
       <a href="#account-eligibility">Eligibility</a>
@@ -152,14 +155,19 @@
       <a href="#account-value">Account Value</a>
 
       <h3>Linking</h3>
-      <a href="#link-challenge">Challenge</a>
+      <a href="#link-challenge">Get Challenge</a>
       <a href="#link-confirm">Confirm Link</a>
 
       <h3>Hive Signing</h3>
-      <a href="#hive-broadcast">Broadcast</a>
+      <a href="#hive-sign-message">Sign Message</a>
+      <a href="#hive-broadcast">Broadcast (Posting)</a>
       <a href="#hive-transfer">Transfer</a>
-      <a href="#hive-power">Power Up/Down</a>
+      <a href="#hive-savings">Savings</a>
+      <a href="#hive-power">Power Up / Down</a>
       <a href="#hive-delegate">Delegate</a>
+      <a href="#hive-convert">Convert</a>
+      <a href="#hive-limit-orders">Limit Orders</a>
+      <a href="#hive-claim-rewards">Claim Rewards</a>
 
       <h3>Emancipation</h3>
       <a href="#emancipate-status">Status</a>
@@ -173,7 +181,9 @@
       <h3>Admin</h3>
       <a href="#admin-stats">Stats</a>
       <a href="#admin-jobs">Jobs</a>
+      <a href="#admin-claim-act">Claim ACT</a>
       <a href="#admin-tokens">Sponsor Tokens</a>
+      <a href="#admin-admins">Admin Users</a>
     </aside>
 
     <main class="docs-main">
@@ -183,30 +193,70 @@
       <div class="intro-grid">
         <div class="intro-tile"><strong>Base URL</strong>https://auth.snapie.io/api</div>
         <div class="intro-tile"><strong>Protocol</strong>JSON over HTTPS</div>
-        <div class="intro-tile"><strong>Auth</strong>Session cookie (httpOnly) + CSRF token</div>
+        <div class="intro-tile"><strong>Auth</strong>Session cookie + CSRF token</div>
         <div class="intro-tile"><strong>Rate Limits</strong>Varies per endpoint group</div>
       </div>
 
+      <!-- ── OVERVIEW ─────────────────────────────────────────── -->
       <h2 id="overview">Overview</h2>
       <p>Snapie Auth bridges Web2 identity (Google, email) to Hive blockchain accounts. It handles the full lifecycle: account creation using pre-claimed tokens (ACTs), custodial key management, Hive operation signing, and voluntary key export (emancipation).</p>
       <p>External services integrate via the <strong>Internal API</strong> using a shared Bearer token for account provisioning and sponsor token issuance.</p>
 
-      <h2 id="auth-cookies">Auth & Cookies</h2>
-      <p>Sessions are stored in two cookies:</p>
+      <h2 id="auth-cookies">Auth &amp; Cookies</h2>
+      <p>Sessions are stored in two cookies set by the server after any successful login:</p>
       <table>
         <thead><tr><th>Cookie</th><th>Purpose</th><th>Flags</th></tr></thead>
         <tbody>
           <tr><td><code>snapieauth_session</code></td><td>JWT RS256 session token</td><td>httpOnly, Secure, SameSite=Lax</td></tr>
-          <tr><td><code>snapieauth_csrf</code></td><td>CSRF double-submit token</td><td>Secure, SameSite=Lax (JS-readable)</td></tr>
+          <tr><td><code>snapieauth_csrf</code></td><td>CSRF double-submit token (JS-readable)</td><td>Secure, SameSite=Lax</td></tr>
         </tbody>
       </table>
-      <p>All state-mutating requests must include the CSRF token as the <code>x-csrf-token</code> header. Read it from the <code>snapieauth_csrf</code> cookie with JavaScript.</p>
+      <p>All state-mutating requests must include the CSRF token as the <code>x-csrf-token</code> header. Always send <code>credentials: 'include'</code> in fetch calls. There is no Bearer token for user-facing APIs.</p>
+
+      <h2 id="custody-modes">Custody Modes</h2>
+      <p><strong>Custodial</strong> — Snapie generates all four Hive keypairs (owner, active, posting, memo) server-side. Keys are AES-256-GCM encrypted using a server-derived key. The user never sees them until voluntary emancipation. All signing — posting and active — is handled transparently.</p>
+      <p><strong>Emancipated</strong> — User holds their own keys. Snapie only has posting authority (granted by the user). Posting-level ops are still proxied. Active-level ops return an unsigned operation for the client to sign via Aioha or Keychain:</p>
+      <pre>{ "needsClientSigning": true, "unsignedOp": ["op_name", {...}], "account": "alice", "keyType": "active" }</pre>
+      <p>The <code>account</code> and <code>keyType</code> fields are always present so the consuming app can call Aioha or Keychain directly without additional context.</p>
 
       <h2 id="errors">Error Codes</h2>
-      <pre>{ "error": "error_code_string" }</pre>
-      <p>Common codes: <code>unauthorized</code>, <code>csrf_invalid</code>, <code>already_has_account</code>, <code>no_acts</code>, <code>invalid_username</code>, <code>emancipation_required</code>, <code>not_custodial</code>.</p>
+      <p>All errors return <code>HTTP 4xx/5xx</code> with body <code>{ "error": "error_code_string" }</code>.</p>
+      <table>
+        <thead><tr><th>Code</th><th>Status</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td>unauthorized</td><td>401</td><td>No valid session cookie</td></tr>
+          <tr><td>admin_required</td><td>403</td><td>Endpoint requires isAdmin</td></tr>
+          <tr><td>csrf_invalid</td><td>403</td><td>Missing or wrong x-csrf-token header</td></tr>
+          <tr><td>already_linked</td><td>409</td><td>User already has a Hive account</td></tr>
+          <tr><td>previously_had_account</td><td>403</td><td>User already used their free account (sponsor token overrides)</td></tr>
+          <tr><td>global_daily_limit</td><td>429</td><td>Daily free account quota exhausted — resets midnight UTC</td></tr>
+          <tr><td>ip_daily_limit</td><td>429</td><td>Per-IP daily quota exhausted</td></tr>
+          <tr><td>no_acts</td><td>503</td><td>Snapie has no pre-claimed account tokens</td></tr>
+          <tr><td>invalid_username</td><td>400</td><td>Bad format or username already taken on-chain</td></tr>
+          <tr><td>insufficient_rc</td><td>503</td><td>Insufficient Resource Credits. For posting ops: the Snapie service account is out of RC (operator issue). For active ops: the user's own account is low.</td></tr>
+          <tr><td>emancipation_required</td><td>403</td><td>Account value exceeded threshold; user must export keys first</td></tr>
+          <tr><td>not_custodial</td><td>400</td><td>Action requires custodial mode</td></tr>
+          <tr><td>invalid_or_expired_challenge</td><td>400</td><td>Link challenge not found or expired (TTL 5 min)</td></tr>
+          <tr><td>invalid_signature</td><td>401</td><td>Hive posting key signature did not verify</td></tr>
+          <tr><td>posting_authority_required</td><td>403</td><td>@snapie does not have posting authority on the account</td></tr>
+          <tr><td>email_not_verified</td><td>403</td><td>Email address has not been verified yet</td></tr>
+          <tr><td>user_not_found</td><td>404</td><td>No account with that email (admin: grant admin)</td></tr>
+          <tr><td>cannot_demote_self</td><td>400</td><td>Admin tried to revoke their own access</td></tr>
+          <tr><td>op_not_allowed</td><td>403</td><td>Operation type is not permitted via the broadcast endpoint</td></tr>
+        </tbody>
+      </table>
 
-      <!-- ── AUTH ──────────────────────────────────────────── -->
+      <h2 id="assets">Asset Format</h2>
+      <p>All monetary amounts are <strong>strings</strong>, never plain numbers.</p>
+      <table>
+        <thead><tr><th>Currency</th><th>Format</th><th>Example</th></tr></thead>
+        <tbody>
+          <tr><td>HIVE / HBD</td><td>3 decimal places</td><td><code>"1.000 HIVE"</code>, <code>"0.500 HBD"</code></td></tr>
+          <tr><td>VESTS</td><td>6 decimal places</td><td><code>"1.000000 VESTS"</code></td></tr>
+        </tbody>
+      </table>
+
+      <!-- ── AUTH ──────────────────────────────────────────────── -->
       <h2 id="auth-google">POST /auth/google</h2>
       <div class="endpoint">
         <div class="endpoint-header">
@@ -214,70 +264,101 @@
           <span class="endpoint-path">/auth/google</span>
           <span class="auth-badge auth-none">Public</span>
         </div>
-        <p>Sign in or register with a Google ID token. Creates user if first time.</p>
+        <p>Sign in or register with a Google ID token. Creates a user record on first login. Sets session and CSRF cookies.</p>
         <h3>Request</h3>
         <table><thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
-        <tbody><tr><td>idToken</td><td>string</td><td>Google ID token from OAuth popup</td></tr></tbody></table>
-        <h3>Response</h3>
-        <pre>{ "user": { "id": "...", "name": "Alice", "picture": "https://..." } }</pre>
-        <p>Sets <code>snapieauth_session</code> and <code>snapieauth_csrf</code> cookies.</p>
+        <tbody><tr><td>credential</td><td>string</td><td>Google ID token from the OAuth popup / One Tap response</td></tr></tbody></table>
+        <h3>Response — <code>{ user: SnapieUser }</code></h3>
+        <pre>{
+  "user": {
+    "id": "6a272a4eac383450fbb0bc30",
+    "name": "Alice",
+    "picture": "https://lh3.googleusercontent.com/...",
+    "hiveUsername": null,
+    "custodyMode": null,
+    "isAdmin": false
+  }
+}</pre>
+        <p><code>hiveUsername</code> is <code>null</code> until the user creates or links a Hive account.</p>
       </div>
 
       <h2 id="auth-email">Email / Password</h2>
       <div class="endpoint">
         <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/auth/email/register</span><span class="auth-badge auth-none">Public</span></div>
+        <p>Register a new email account. Sends a verification email. Returns <code>202 { pending: true }</code> — no session is created until the email is verified.</p>
         <table><thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
         <tbody>
           <tr><td>name</td><td>string</td><td>Display name</td></tr>
-          <tr><td>email</td><td>string</td><td>Email address (never stored plaintext)</td></tr>
-          <tr><td>password</td><td>string</td><td>Min 8 chars. Hashed with Argon2id.</td></tr>
+          <tr><td>email</td><td>string</td><td>Email address — stored as HMAC-SHA256 hash only</td></tr>
+          <tr><td>password</td><td>string</td><td>Min 8 chars — hashed with Argon2id</td></tr>
         </tbody></table>
       </div>
       <div class="endpoint">
         <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/auth/email/login</span><span class="auth-badge auth-none">Public</span></div>
-        <table><thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+        <p>Log in with email and password. Returns <code>403 email_not_verified</code> if verification is pending. Sets session and CSRF cookies on success.</p>
+        <table><thead><tr><th>Field</th><th>Type</th></tr></thead>
         <tbody>
-          <tr><td>email</td><td>string</td><td>Email address</td></tr>
-          <tr><td>password</td><td>string</td><td>Password</td></tr>
+          <tr><td>email</td><td>string</td></tr>
+          <tr><td>password</td><td>string</td></tr>
         </tbody></table>
+        <p>Response: <code>{ user: SnapieUser }</code></p>
+      </div>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/auth/email/resend</span><span class="auth-badge auth-none">Public</span></div>
+        <p>Resend the verification email. Rate limited to 5 req/hr per IP.</p>
+        <table><thead><tr><th>Field</th><th>Type</th></tr></thead>
+        <tbody><tr><td>email</td><td>string</td></tr></tbody></table>
+        <p>Response: <code>{ ok: true }</code></p>
+      </div>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-get">GET</span><span class="endpoint-path">/auth/email/verify?token=…</span><span class="auth-badge auth-none">Public</span></div>
+        <p>Email verification link handler. Verifies the token, activates the account, and redirects to <code>/manage.html</code>. This is called by the link in the verification email — not typically called directly.</p>
       </div>
 
       <h2 id="auth-me">GET /auth/me</h2>
       <div class="endpoint">
         <div class="endpoint-header"><span class="method method-get">GET</span><span class="endpoint-path">/auth/me</span><span class="auth-badge auth-session">Session</span></div>
-        <p>Returns the current user and emancipation status.</p>
+        <p>Returns the current session user. For custodial accounts with a Hive username, also returns live account value and emancipation status.</p>
         <pre>{
   "user": {
-    "id": "...",
+    "id": "6a272a4eac383450fbb0bc30",
     "name": "Alice",
-    "picture": "...",
+    "picture": "https://lh3.googleusercontent.com/...",
     "hiveUsername": "alice",
     "custodyMode": "custodial",
     "isAdmin": false
   },
-  "emancipationRequired": false,
-  "accountValue": { "totalUsd": 3.21 }
+  "email": "alice@example.com",
+  "accountValueUsd": 3.21,
+  "emancipationRequired": false
 }</pre>
+        <p><code>email</code>, <code>accountValueUsd</code>, and <code>emancipationRequired</code> are only present when applicable.</p>
       </div>
 
-      <!-- ── ACCOUNT ───────────────────────────────────────── -->
+      <h2 id="auth-logout">POST /auth/logout</h2>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/auth/logout</span><span class="auth-badge auth-session">Session</span></div>
+        <p>Clears both session cookies. No request body. Returns <code>{ ok: true }</code>.</p>
+      </div>
+
+      <!-- ── ACCOUNT ─────────────────────────────────────────── -->
       <h2 id="account-eligibility">GET /account/eligibility</h2>
       <div class="endpoint">
         <div class="endpoint-header"><span class="method method-get">GET</span><span class="endpoint-path">/account/eligibility</span><span class="auth-badge auth-session">Session</span></div>
         <p>Check if the current user can create a free Hive account.</p>
         <pre>{
   "canCreate": true,
-  "sponsored": true,
-  "actsAvailable": 12,
+  "canLinkExisting": true,
+  "sponsored": false,
   "reason": null
 }</pre>
-        <p><code>sponsored: true</code> means a sponsor token was found for this email — the account creation fee is waived even for users who previously had an account.</p>
+        <p><code>sponsored: true</code> means a sponsor token was found for this email — quota limits and the "previously had account" restriction are bypassed. <code>reason</code> is set when <code>canCreate</code> is false: <code>already_linked</code>, <code>previously_had_account</code>, <code>no_acts</code>, <code>ip_daily_limit</code>, <code>global_daily_limit</code>.</p>
       </div>
 
       <h2 id="account-check">GET /account/check-username/:username</h2>
       <div class="endpoint">
         <div class="endpoint-header"><span class="method method-get">GET</span><span class="endpoint-path">/account/check-username/:username</span><span class="auth-badge auth-session">Session</span></div>
-        <p>Check if a Hive username is available. 40 req/min rate limit.</p>
+        <p>Check if a Hive username is available on-chain. Rate limited to 40 req/min.</p>
         <pre>{ "available": true }
 { "available": false, "reason": "already_taken" }</pre>
       </div>
@@ -285,76 +366,126 @@
       <h2 id="account-create">POST /account/create</h2>
       <div class="endpoint">
         <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/account/create</span><span class="auth-badge auth-session">Session</span><span class="auth-badge auth-csrf">CSRF</span></div>
-        <p>Create a new Hive account. 5 req/hr rate limit.</p>
+        <p>Queue a Hive account creation job. Rate limited to 5 req/hr.</p>
         <table><thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
         <tbody>
-          <tr><td>username</td><td>string</td><td>Desired Hive username (3-16 chars)</td></tr>
+          <tr><td>username</td><td>string</td><td>Desired Hive username (3–16 chars)</td></tr>
           <tr><td>custodyMode</td><td>string</td><td><code>"custodial"</code> or <code>"emancipated"</code></td></tr>
-          <tr><td>ownerPub</td><td>string?</td><td>Required if emancipated. STM… public key.</td></tr>
-          <tr><td>activePub</td><td>string?</td><td>Required if emancipated.</td></tr>
-          <tr><td>postingPub</td><td>string?</td><td>Required if emancipated.</td></tr>
-          <tr><td>memoPub</td><td>string?</td><td>Required if emancipated.</td></tr>
+          <tr><td>ownerPub</td><td>string?</td><td>STM… public key. Required if <code>emancipated</code>.</td></tr>
+          <tr><td>activePub</td><td>string?</td><td>Required if <code>emancipated</code>.</td></tr>
+          <tr><td>postingPub</td><td>string?</td><td>Required if <code>emancipated</code>.</td></tr>
+          <tr><td>memoPub</td><td>string?</td><td>Required if <code>emancipated</code>.</td></tr>
         </tbody></table>
-        <p>For <code>custodial</code> mode, Snapie generates all keypairs server-side. No pubkeys needed.</p>
-        <pre>{ "jobId": "...", "sponsored": false }</pre>
+        <p>For <code>custodial</code> mode, all keypairs are generated server-side — no pubkeys needed.</p>
+        <pre>{ "jobId": "abc123", "sponsored": false }</pre>
+        <p>Poll <code>GET /account/job/:jobId</code> to track progress.</p>
       </div>
 
       <h2 id="account-job">GET /account/job/:jobId</h2>
       <div class="endpoint">
         <div class="endpoint-header"><span class="method method-get">GET</span><span class="endpoint-path">/account/job/:jobId</span><span class="auth-badge auth-session">Session</span></div>
-        <p>Poll job status. Statuses: <code>pending → broadcasting → acked → confirmed</code> (or <code>failed</code>/<code>expired</code>).</p>
+        <p>Poll job status. Recommended interval: every 3–5 seconds.</p>
+        <p>Status progression: <code>pending → broadcasting → acked → confirmed</code> (or <code>failed</code> / <code>expired</code>).</p>
         <pre>{
-  "jobId": "...",
+  "jobId": "abc123",
   "username": "alice",
   "status": "confirmed",
-  "txId": "abc123...",
+  "txId": "abc123def456...",
   "error": null
 }</pre>
+        <p>On <code>confirmed</code>, the user's <code>hiveUsername</code> is set. Call <code>GET /auth/me</code> to refresh the session.</p>
       </div>
 
       <h2 id="account-value">GET /account/value</h2>
       <div class="endpoint">
         <div class="endpoint-header"><span class="method method-get">GET</span><span class="endpoint-path">/account/value</span><span class="auth-badge auth-session">Session</span></div>
-        <pre>{ "hive": 1.2, "hbd": 0.5, "hp": 4.8, "totalUsd": 6.5 }</pre>
+        <p>Live account balances and USD value. Requires a linked Hive account.</p>
+        <pre>{
+  "hiveBalance": "4.200 HIVE",
+  "hbdBalance":  "1.500 HBD",
+  "vestingShares": "5000.000000 VESTS",
+  "hiveValueUsd": 1.26,
+  "hbdValueUsd":  1.50,
+  "vestingValueUsd": 2.10,
+  "totalValueUsd": 4.86,
+  "emancipationRequired": false
+}</pre>
       </div>
 
-      <!-- ── LINK ──────────────────────────────────────────── -->
+      <!-- ── LINK ──────────────────────────────────────────────── -->
       <h2 id="link-challenge">POST /link/verify-challenge</h2>
       <div class="endpoint">
         <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/link/verify-challenge</span><span class="auth-badge auth-session">Session</span><span class="auth-badge auth-csrf">CSRF</span></div>
-        <p>Get a challenge string to sign with your Hive posting key. Challenge expires in 5 minutes.</p>
-        <table><thead><tr><th>Field</th><th>Type</th></tr></thead>
-        <tbody><tr><td>hiveUsername</td><td>string</td></tr></tbody></table>
-        <pre>{ "challenge": "snapie-auth:link:1717700000:a3f9..." }</pre>
+        <p>Request a challenge nonce to sign with your Hive posting key. The challenge expires after 5 minutes.</p>
+        <table><thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+        <tbody><tr><td>hiveUsername</td><td>string</td><td>The Hive account to link</td></tr></tbody></table>
+        <pre>{ "challenge": "snapie-auth:link:1717700000:a3f9...", "snapieAccount": "snapie" }</pre>
+        <p><code>snapieAccount</code> is the Hive account that needs posting authority — use it with <code>requestAddAccountAuthority</code> in Keychain before confirming.</p>
       </div>
 
       <h2 id="link-confirm">POST /link/confirm</h2>
       <div class="endpoint">
         <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/link/confirm</span><span class="auth-badge auth-session">Session</span><span class="auth-badge auth-csrf">CSRF</span></div>
-        <p>Verify signature and link the Hive account. Snapie must already have posting authority on the Hive account.</p>
+        <p>Verify the signed challenge and link the Hive account. <code>@snapie</code> must already have posting authority on the account before this is called.</p>
         <table><thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
         <tbody>
-          <tr><td>hiveUsername</td><td>string</td><td></td></tr>
-          <tr><td>challenge</td><td>string</td><td>The challenge from verify-challenge</td></tr>
-          <tr><td>signature</td><td>string</td><td>Hex signature from Hive posting key</td></tr>
+          <tr><td>username</td><td>string</td><td>The Hive account to link</td></tr>
+          <tr><td>challenge</td><td>string</td><td>The challenge string from <code>verify-challenge</code></td></tr>
+          <tr><td>signature</td><td>string</td><td>Hex-encoded signature from Hive posting key</td></tr>
         </tbody></table>
         <pre>{ "ok": true, "hiveUsername": "alice" }</pre>
+        <p>Errors: <code>invalid_or_expired_challenge</code>, <code>invalid_signature</code>, <code>posting_authority_required</code>, <code>already_linked</code>.</p>
       </div>
 
-      <!-- ── HIVE ──────────────────────────────────────────── -->
+      <!-- ── HIVE ──────────────────────────────────────────────── -->
+      <h2 id="hive-sign-message">POST /hive/sign-message</h2>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/hive/sign-message</span><span class="auth-badge auth-session">Session</span><span class="auth-badge auth-csrf">CSRF</span></div>
+        <p>Sign an arbitrary message with the user's Hive posting key. Custodial: server signs silently. Emancipated: returns the message for client signing. 30 req/min.</p>
+        <table><thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+        <tbody><tr><td>message</td><td>string</td><td>The message to sign. Max 512 chars.</td></tr></tbody></table>
+        <pre>// Custodial
+{ "signature": "1f3a...", "account": "alice" }
+
+// Emancipated
+{ "needsClientSigning": true, "message": "...", "account": "alice", "keyType": "posting" }</pre>
+        <p>Signature is SHA-256 + secp256k1 (compatible with dhive/hive-js <code>verifySignature</code>).</p>
+        <p>Emancipated client signing:</p>
+        <pre>// Keychain
+window.hive_keychain.requestSignBuffer(account, message, 'Posting', cb)
+// Aioha
+aioha.signMessage(message, KeyTypes.Posting)</pre>
+      </div>
+
       <h2 id="hive-broadcast">POST /hive/broadcast</h2>
       <div class="endpoint">
         <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/hive/broadcast</span><span class="auth-badge auth-session">Session</span><span class="auth-badge auth-csrf">CSRF</span></div>
-        <p>Sign and broadcast a posting-level Hive operation. Allowed ops: <code>vote, comment, delete_comment, custom_json, claim_reward_balance</code>. 60 req/min.</p>
+        <p>Sign and broadcast a posting-level Hive operation using Snapie's posting authority. Works for all users (custodial and emancipated). 60 req/min.</p>
+        <p>Allowed op types: <code>vote</code>, <code>comment</code>, <code>delete_comment</code>, <code>custom_json</code>, <code>claim_reward_balance</code>.</p>
         <table><thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
         <tbody>
-          <tr><td>opType</td><td>string</td><td>One of the allowed op types</td></tr>
-          <tr><td>opData</td><td>object</td><td>Op payload (author/permlink etc.)</td></tr>
+          <tr><td>op</td><td>array</td><td>A 2-element array: <code>["op_type", { ...fields }]</code></td></tr>
         </tbody></table>
-        <p>Custodial: signed and broadcast by server. Emancipated: returns <code>{ needsClientSigning: true, unsignedOp }</code>.</p>
-        <pre>{ "txId": "abc123..." }
-// or
-{ "needsClientSigning": true, "unsignedOp": [...] }</pre>
+        <pre>// Vote
+{ "op": ["vote", { "voter": "alice", "author": "bob", "permlink": "my-post", "weight": 10000 }] }
+
+// Root post
+{ "op": ["comment", {
+    "parent_author": "", "parent_permlink": "hive",
+    "author": "alice", "permlink": "my-slug",
+    "title": "My Post", "body": "Content here.",
+    "json_metadata": "{\"tags\":[\"hive\"],\"app\":\"myapp/1.0\"}"
+}] }
+
+// Custom JSON
+{ "op": ["custom_json", {
+    "required_auths": [],
+    "required_posting_auths": ["alice"],
+    "id": "myapp",
+    "json": "{\"action\":\"follow\",\"target\":\"bob\"}"
+}] }</pre>
+        <p>Response: <code>{ "txId": "abc123..." }</code></p>
+        <p>Note: <code>json_metadata</code> and <code>json</code> must be JSON-encoded <em>strings</em>, not objects.</p>
       </div>
 
       <h2 id="hive-transfer">POST /hive/transfer</h2>
@@ -363,142 +494,255 @@
         <p>Transfer HIVE or HBD. Active-level op. 10 req/min.</p>
         <table><thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
         <tbody>
-          <tr><td>to</td><td>string</td><td>Recipient Hive username</td></tr>
-          <tr><td>amount</td><td>string</td><td>e.g. "1.000 HIVE"</td></tr>
-          <tr><td>memo</td><td>string?</td><td>Optional memo</td></tr>
+          <tr><td>to</td><td>string</td><td>Recipient Hive username (3–16 chars)</td></tr>
+          <tr><td>amount</td><td>string</td><td><code>"N.NNN HIVE"</code> or <code>"N.NNN HBD"</code></td></tr>
+          <tr><td>memo</td><td>string?</td><td>Optional. Max 2048 chars.</td></tr>
+        </tbody></table>
+        <pre>// Custodial
+{ "txId": "abc123..." }
+
+// Emancipated
+{ "needsClientSigning": true, "unsignedOp": ["transfer", {...}], "account": "alice", "keyType": "active" }</pre>
+      </div>
+
+      <h2 id="hive-savings">Savings</h2>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/hive/transfer-to-savings</span><span class="auth-badge auth-session">Session</span><span class="auth-badge auth-csrf">CSRF</span></div>
+        <p>Move HIVE or HBD into savings. Active-level op. No lockup on deposit; savings earn interest. 10 req/min.</p>
+        <table><thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td>amount</td><td>string</td><td><code>"N.NNN HIVE"</code> or <code>"N.NNN HBD"</code></td></tr>
+          <tr><td>to</td><td>string?</td><td>Recipient — defaults to self</td></tr>
+          <tr><td>memo</td><td>string?</td><td>Optional. Max 2048 chars.</td></tr>
+        </tbody></table>
+      </div>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/hive/transfer-from-savings</span><span class="auth-badge auth-session">Session</span><span class="auth-badge auth-csrf">CSRF</span></div>
+        <p>Initiate a savings withdrawal. Funds arrive after 3 days. Active-level op. 10 req/min.</p>
+        <table><thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td>amount</td><td>string</td><td><code>"N.NNN HIVE"</code> or <code>"N.NNN HBD"</code></td></tr>
+          <tr><td>to</td><td>string?</td><td>Recipient — defaults to self</td></tr>
+          <tr><td>memo</td><td>string?</td><td>Optional. Max 2048 chars.</td></tr>
+          <tr><td>requestId</td><td>integer?</td><td>Must be unique per account. Auto-generated from <code>Math.floor(Date.now()/1000)</code> if omitted.</td></tr>
         </tbody></table>
       </div>
 
       <h2 id="hive-power">Power Up / Down</h2>
       <div class="endpoint">
         <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/hive/power-up</span><span class="auth-badge auth-session">Session</span><span class="auth-badge auth-csrf">CSRF</span></div>
+        <p>Stake HIVE as Hive Power. Active-level op. 10 req/min.</p>
         <table><thead><tr><th>Field</th><th>Type</th></tr></thead>
-        <tbody><tr><td>amount</td><td>string — e.g. "10.000 HIVE"</td></tr></tbody></table>
+        <tbody><tr><td>amount</td><td>string — <code>"N.NNN HIVE"</code></td></tr></tbody></table>
       </div>
       <div class="endpoint">
         <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/hive/power-down</span><span class="auth-badge auth-session">Session</span><span class="auth-badge auth-csrf">CSRF</span></div>
-        <table><thead><tr><th>Field</th><th>Type</th></tr></thead>
-        <tbody><tr><td>amount</td><td>string — VESTS to withdraw</td></tr></tbody></table>
+        <p>Begin 13-week HIVE unstaking. Active-level op. 10 req/min.</p>
+        <table><thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+        <tbody><tr><td>amount</td><td>string</td><td><code>"N.NNNNNN VESTS"</code> — 6 decimal places. To convert HP → VESTS: <code>hp × total_vesting_shares / total_vesting_fund_hive</code> from <code>getDynamicGlobalProperties()</code>. Set to <code>"0.000000 VESTS"</code> to cancel an active power-down.</td></tr></tbody></table>
       </div>
 
       <h2 id="hive-delegate">POST /hive/delegate</h2>
       <div class="endpoint">
         <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/hive/delegate</span><span class="auth-badge auth-session">Session</span><span class="auth-badge auth-csrf">CSRF</span></div>
-        <table><thead><tr><th>Field</th><th>Type</th></tr></thead>
+        <p>Delegate Hive Power. Active-level op. 10 req/min.</p>
+        <table><thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
         <tbody>
-          <tr><td>delegatee</td><td>string — recipient username</td></tr>
-          <tr><td>amount</td><td>string — VESTS e.g. "1000000000 VESTS"</td></tr>
+          <tr><td>delegatee</td><td>string</td><td>Recipient Hive username</td></tr>
+          <tr><td>amount</td><td>string</td><td><code>"N.NNNNNN VESTS"</code> — set to <code>"0.000000 VESTS"</code> to remove delegation</td></tr>
         </tbody></table>
       </div>
 
-      <!-- ── EMANCIPATE ────────────────────────────────────── -->
+      <h2 id="hive-convert">Convert</h2>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/hive/convert</span><span class="auth-badge auth-session">Session</span><span class="auth-badge auth-csrf">CSRF</span></div>
+        <p>Convert HBD → HIVE via the debt conversion mechanism (~3.5 day wait, settles at median price). Active-level op. 10 req/min.</p>
+        <table><thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td>amount</td><td>string</td><td><code>"N.NNN HBD"</code> only</td></tr>
+          <tr><td>requestId</td><td>integer?</td><td>Auto-generated if omitted</td></tr>
+        </tbody></table>
+      </div>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/hive/collateralized-convert</span><span class="auth-badge auth-session">Session</span><span class="auth-badge auth-csrf">CSRF</span></div>
+        <p>Convert HIVE → HBD instantly using collateralized conversion. HBD is delivered immediately; excess collateral HIVE is returned after ~3.5 days. Active-level op. 10 req/min.</p>
+        <table><thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td>amount</td><td>string</td><td><code>"N.NNN HIVE"</code> only</td></tr>
+          <tr><td>requestId</td><td>integer?</td><td>Auto-generated if omitted</td></tr>
+        </tbody></table>
+      </div>
+
+      <h2 id="hive-limit-orders">Limit Orders</h2>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/hive/limit-order-create</span><span class="auth-badge auth-session">Session</span><span class="auth-badge auth-csrf">CSRF</span></div>
+        <p>Place a resting limit order or instant market swap on the internal HIVE/HBD market. Active-level op. 10 req/min.</p>
+        <table><thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td>sell</td><td>string</td><td><code>"N.NNN HIVE"</code> or <code>"N.NNN HBD"</code> — what you give up</td></tr>
+          <tr><td>receive</td><td>string</td><td>Opposite currency to sell — minimum you'll accept</td></tr>
+          <tr><td>fillOrKill</td><td>boolean?</td><td><code>false</code> (default) = resting limit order. <code>true</code> = instant market swap — order cancels immediately if not fully fillable.</td></tr>
+          <tr><td>expiresInSeconds</td><td>integer?</td><td>Default 3600, max 2592000 (30 days). Ignored when <code>fillOrKill</code> is true.</td></tr>
+          <tr><td>orderId</td><td>integer?</td><td>uint32, unique per account. Auto-generated from timestamp if omitted.</td></tr>
+        </tbody></table>
+        <p>Note: a <code>fillOrKill=true</code> order that cannot fill still returns <code>{ txId }</code> — the transaction was broadcast but no swap occurred. Verify balances or check open orders to confirm a fill.</p>
+      </div>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/hive/limit-order-cancel</span><span class="auth-badge auth-session">Session</span><span class="auth-badge auth-csrf">CSRF</span></div>
+        <p>Cancel an open limit order. Active-level op. 10 req/min.</p>
+        <table><thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td>orderId</td><td>integer</td><td>Must match an open order owned by the authenticated user</td></tr>
+        </tbody></table>
+      </div>
+
+      <h2 id="hive-claim-rewards">POST /hive/claim-rewards</h2>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/hive/claim-rewards</span><span class="auth-badge auth-session">Session</span><span class="auth-badge auth-csrf">CSRF</span></div>
+        <p>Claim all pending reward balances (HIVE, HBD, VESTS). Posting-level op — proxied for all users including emancipated. No request body needed; amounts are read from the chain automatically.</p>
+        <pre>{ "txId": "abc123..." }</pre>
+      </div>
+
+      <!-- ── EMANCIPATE ──────────────────────────────────────── -->
       <h2 id="emancipate-status">GET /emancipate/status</h2>
       <div class="endpoint">
         <div class="endpoint-header"><span class="method method-get">GET</span><span class="endpoint-path">/emancipate/status</span><span class="auth-badge auth-session">Session</span></div>
         <pre>{
   "custodyMode": "custodial",
-  "totalUsd": 3.4,
-  "thresholdUsd": 10,
-  "emancipationRequired": false
+  "hiveUsername": "alice",
+  "accountValueUsd": 3.40,
+  "threshold": 10,
+  "forcedEmancipation": false
 }</pre>
+        <p><code>forcedEmancipation: true</code> means the user must export their keys before further actions are allowed.</p>
       </div>
 
       <h2 id="emancipate-start">POST /emancipate/start</h2>
       <div class="endpoint">
         <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/emancipate/start</span><span class="auth-badge auth-session">Session</span><span class="auth-badge auth-csrf">CSRF</span></div>
-        <p>Decrypt and return all private keys. Deletes encrypted copies from server immediately. Custodial only. 5 req/hr.</p>
+        <p>Decrypt and return all four private keys. Immediately wipes the encrypted copies from the server. Custodial accounts only. 5 req/hr. This action is irreversible.</p>
+        <p>Before returning keys, verifies them against on-chain public keys to guarantee correctness.</p>
         <pre>{
   "keys": {
-    "owner": "5J...",
-    "active": "5J...",
+    "owner":   "5J...",
+    "active":  "5J...",
     "posting": "5J...",
-    "memo": "5J..."
+    "memo":    "5J..."
   },
-  "message": "Keys exported. Snapie's copy has been deleted."
+  "message": "Save these keys now. They will not be shown again. This server has deleted its copy."
 }</pre>
       </div>
 
-      <!-- ── INTERNAL ───────────────────────────────────────── -->
+      <!-- ── INTERNAL ─────────────────────────────────────────── -->
       <h2 id="internal-provision">POST /internal/provision-account</h2>
       <div class="endpoint">
         <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/internal/provision-account</span><span class="auth-badge auth-internal">Internal Bearer</span></div>
-        <p>Create a Hive account without a user session. Used by external services to sell or gift accounts.</p>
+        <p>Create a Hive account without a user session. Used by external services to sell or gift accounts. Requires <code>Authorization: Bearer &lt;INTERNAL_API_KEY&gt;</code>.</p>
         <table><thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
         <tbody>
           <tr><td>username</td><td>string</td><td>Desired Hive username</td></tr>
           <tr><td>custodyMode</td><td>string</td><td><code>"custodial"</code> or <code>"emancipated"</code></td></tr>
-          <tr><td>ownerPub…</td><td>string?</td><td>Required if emancipated</td></tr>
-          <tr><td>linkedEmail</td><td>string?</td><td>Associate with existing or new user by email</td></tr>
-          <tr><td>returnKeysOnce</td><td>boolean?</td><td>Custodial: return keys on first poll then wipe</td></tr>
-          <tr><td>note</td><td>string?</td><td>Audit note stored with job</td></tr>
+          <tr><td>ownerPub…</td><td>string?</td><td>STM… public keys — required if emancipated</td></tr>
+          <tr><td>linkedEmail</td><td>string?</td><td>Associate with an existing or new user by email. Creates a placeholder user if not registered yet.</td></tr>
+          <tr><td>returnKeysOnce</td><td>boolean?</td><td>Custodial only — decrypt and return keys on the first confirmed poll, then wipe them</td></tr>
+          <tr><td>note</td><td>string?</td><td>Audit note stored with the job</td></tr>
         </tbody></table>
-        <pre>{ "jobId": "...", "userId": "..." }</pre>
+        <pre>{ "jobId": "abc123", "userId": "6a272a4eac383450fbb0bc30" }</pre>
       </div>
 
       <h2 id="internal-job">GET /internal/jobs/:jobId</h2>
       <div class="endpoint">
         <div class="endpoint-header"><span class="method method-get">GET</span><span class="endpoint-path">/internal/jobs/:jobId</span><span class="auth-badge auth-internal">Internal Bearer</span></div>
-        <p>Poll a provisioned job. If <code>returnKeysOnce</code> was set and status is <code>confirmed</code>, decrypts and returns keys exactly once then wipes them.</p>
+        <p>Poll a provisioned job. If <code>returnKeysOnce</code> was set and status is <code>confirmed</code>, decrypts and returns keys exactly once then permanently wipes them.</p>
         <pre>{
-  "jobId": "...",
+  "jobId": "abc123",
   "username": "alice",
   "status": "confirmed",
-  "txId": "abc123",
-  "keys": { "owner": "5J...", "active": "5J...", "posting": "5J...", "memo": "5J..." }
+  "custodyMode": "custodial",
+  "txId": "abc123def456",
+  "keys": { "owner": "5J...", "active": "5J...", "posting": "5J...", "memo": "5J..." },
+  "error": null
 }</pre>
-        <p>On second call: <code>{ ...base, "keysAlreadyDelivered": true }</code></p>
+        <p><code>keys</code> is only present on the first call after confirmation when <code>returnKeysOnce</code> was set. Subsequent calls return <code>{ ...base, "keysAlreadyDelivered": true }</code>.</p>
       </div>
 
       <h2 id="internal-sponsor">POST /internal/issue-sponsor-token</h2>
       <div class="endpoint">
         <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/internal/issue-sponsor-token</span><span class="auth-badge auth-internal">Internal Bearer</span></div>
-        <p>Issue a one-time sponsor token for an email address. When the user registers with that email and creates a Hive account, the token is consumed and the account creation fee is waived (even for previously-account holders).</p>
+        <p>Issue a one-time sponsor token for an email address. When the user registers with that email and creates a Hive account, the token is consumed automatically — their account creation bypasses the daily quota and the "previously had account" restriction.</p>
         <table><thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
         <tbody>
           <tr><td>email</td><td>string</td><td>Recipient email</td></tr>
-          <tr><td>note</td><td>string?</td><td>e.g. "earned 500 credits"</td></tr>
-          <tr><td>expiresInDays</td><td>number?</td><td>Optional TTL in days</td></tr>
+          <tr><td>note</td><td>string?</td><td>e.g. <code>"earned 500 credits"</code></td></tr>
+          <tr><td>expiresInDays</td><td>number?</td><td>Optional TTL in days — no expiry if omitted</td></tr>
         </tbody></table>
-        <pre>{ "tokenId": "...", "email": "alice@example.com", "expiresAt": null }</pre>
+        <pre>{ "tokenId": "...", "email": "alice@example.com", "note": "...", "expiresAt": null }</pre>
       </div>
 
-      <!-- ── ADMIN ──────────────────────────────────────────── -->
+      <!-- ── ADMIN ─────────────────────────────────────────────── -->
       <h2 id="admin-stats">GET /admin/stats</h2>
       <div class="endpoint">
-        <div class="endpoint-header"><span class="method method-get">GET</span><span class="endpoint-path">/admin/stats</span><span class="auth-badge auth-admin">Admin Session</span></div>
+        <div class="endpoint-header"><span class="method method-get">GET</span><span class="endpoint-path">/admin/stats</span><span class="auth-badge auth-admin">Admin</span></div>
         <pre>{ "actCount": 14, "pendingJobs": 2, "userCount": 387 }</pre>
       </div>
 
       <h2 id="admin-jobs">GET /admin/jobs</h2>
       <div class="endpoint">
-        <div class="endpoint-header"><span class="method method-get">GET</span><span class="endpoint-path">/admin/jobs</span><span class="auth-badge auth-admin">Admin Session</span></div>
-        <p>Last 100 account creation jobs.</p>
+        <div class="endpoint-header"><span class="method method-get">GET</span><span class="endpoint-path">/admin/jobs</span><span class="auth-badge auth-admin">Admin</span></div>
+        <p>Last 100 account creation jobs across all users.</p>
+      </div>
+
+      <h2 id="admin-claim-act">POST /admin/claim-act</h2>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/admin/claim-act</span><span class="auth-badge auth-admin">Admin</span><span class="auth-badge auth-csrf">CSRF</span></div>
+        <p>Claim one pre-claimed account token (ACT) from the Snapie service account using its RC. No request body.</p>
+        <pre>{ "ok": true, "txId": "abc123..." }</pre>
       </div>
 
       <h2 id="admin-tokens">Sponsor Token Management</h2>
       <div class="endpoint">
-        <div class="endpoint-header"><span class="method method-get">GET</span><span class="endpoint-path">/admin/sponsor-tokens</span><span class="auth-badge auth-admin">Admin Session</span></div>
+        <div class="endpoint-header"><span class="method method-get">GET</span><span class="endpoint-path">/admin/sponsor-tokens</span><span class="auth-badge auth-admin">Admin</span></div>
         <p>List all sponsor tokens. Pass <code>?includeUsed=false</code> to hide consumed tokens.</p>
       </div>
       <div class="endpoint">
-        <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/admin/sponsor-tokens</span><span class="auth-badge auth-admin">Admin Session</span><span class="auth-badge auth-csrf">CSRF</span></div>
-        <table><thead><tr><th>Field</th><th>Type</th></tr></thead>
+        <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/admin/sponsor-tokens</span><span class="auth-badge auth-admin">Admin</span><span class="auth-badge auth-csrf">CSRF</span></div>
+        <p>Issue a sponsor token. Optionally sends an invite email to the recipient (even if they haven't registered yet).</p>
+        <table><thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
         <tbody>
-          <tr><td>email</td><td>string</td></tr>
-          <tr><td>note</td><td>string?</td></tr>
-          <tr><td>expiresInDays</td><td>number?</td></tr>
+          <tr><td>email</td><td>string</td><td>Recipient email</td></tr>
+          <tr><td>note</td><td>string?</td><td>Internal note</td></tr>
+          <tr><td>expiresInDays</td><td>number?</td><td>Optional TTL</td></tr>
+          <tr><td>sendEmail</td><td>boolean?</td><td>Send an invite email to the recipient</td></tr>
         </tbody></table>
+        <pre>{ "tokenId": "...", "emailSent": true }</pre>
       </div>
       <div class="endpoint">
-        <div class="endpoint-header"><span class="method method-delete">DELETE</span><span class="endpoint-path">/admin/sponsor-tokens/:tokenId</span><span class="auth-badge auth-admin">Admin Session</span><span class="auth-badge auth-csrf">CSRF</span></div>
-        <p>Revoke an unused sponsor token.</p>
+        <div class="endpoint-header"><span class="method method-delete">DELETE</span><span class="endpoint-path">/admin/sponsor-tokens/:tokenId</span><span class="auth-badge auth-admin">Admin</span><span class="auth-badge auth-csrf">CSRF</span></div>
+        <p>Revoke an unused sponsor token. Returns <code>{ ok: true }</code>.</p>
+      </div>
+
+      <h2 id="admin-admins">Admin User Management</h2>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-get">GET</span><span class="endpoint-path">/admin/admins</span><span class="auth-badge auth-admin">Admin</span></div>
+        <p>List all admin users.</p>
+        <pre>{ "admins": [{ "userId": "...", "name": "Alice", "provider": "google", "createdAt": "..." }] }</pre>
+      </div>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/admin/admins</span><span class="auth-badge auth-admin">Admin</span><span class="auth-badge auth-csrf">CSRF</span></div>
+        <p>Grant admin access to an existing user by email.</p>
+        <table><thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+        <tbody><tr><td>email</td><td>string</td><td>Must already be registered</td></tr></tbody></table>
+        <pre>{ "userId": "...", "name": "Bob", "provider": "google" }</pre>
+      </div>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-delete">DELETE</span><span class="endpoint-path">/admin/admins/:userId</span><span class="auth-badge auth-admin">Admin</span><span class="auth-badge auth-csrf">CSRF</span></div>
+        <p>Revoke admin access. Cannot demote yourself. Returns <code>{ ok: true }</code>.</p>
       </div>
 
     </main>
   </div>
 
   <script>
-    // Active sidebar link on scroll
     const headings = document.querySelectorAll('.docs-main h2[id]')
     const links = document.querySelectorAll('.sidebar a')
 
