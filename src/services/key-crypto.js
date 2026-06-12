@@ -33,21 +33,36 @@ export function decryptKey(encryptedKey, keyHex) {
   return decipher.update(data, null, 'utf8') + decipher.final('utf8')
 }
 
-// Generate 4 Hive keypairs server-side for custodial accounts.
-// Returns { ownerPub, activePub, postingPub, memoPub, encryptedKeys }
-export function generateAndEncryptKeys(userId) {
+// Generate a Hive master password, then derive all 4 role keypairs from it
+// via PrivateKey.fromLogin — the same derivation Hive wallets (Keychain, PeakD)
+// use, so the master password alone can regenerate every key.
+// The 'P' prefix matches the conventional Hive master-password format.
+export function generateMasterPassword() {
+  return 'P' + PrivateKey.fromSeed(crypto.randomBytes(32).toString('hex')).toString()
+}
+
+// Generate 4 Hive keypairs server-side for custodial accounts, all derived
+// from a single master password. The master password is encrypted and stored
+// alongside the keys so it can be handed back to the user on export.
+// Returns { ownerPub, activePub, postingPub, memoPub, encryptedKeys, encryptedMasterPassword }
+export function generateAndEncryptKeys(userId, username) {
   const roles = ['owner', 'active', 'posting', 'memo']
   const serverKey = deriveServerKey(userId)
+  const masterPassword = generateMasterPassword()
   const pubKeys = {}
   const encryptedKeys = {}
 
   for (const role of roles) {
-    const priv = PrivateKey.fromSeed(crypto.randomBytes(32).toString('hex'))
+    const priv = PrivateKey.fromLogin(username, masterPassword, role)
     pubKeys[`${role}Pub`] = priv.createPublic().toString()
     encryptedKeys[role] = encryptKey(priv.toString(), serverKey)
   }
 
-  return { ...pubKeys, encryptedKeys }
+  return {
+    ...pubKeys,
+    encryptedKeys,
+    encryptedMasterPassword: encryptKey(masterPassword, serverKey)
+  }
 }
 
 // Verify decrypted WIF keys match what's on-chain

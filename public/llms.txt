@@ -20,8 +20,10 @@ Always include `credentials: 'include'` in fetch calls.
 ## Key Concepts
 
 CUSTODIAL: Snapie generates all 4 Hive keypairs server-side (owner, active,
-posting, memo). Keys are AES-256-GCM encrypted with a server-derived key.
-The user never sees or holds keys until voluntary emancipation.
+posting, memo), derived from a single master password via Hive's fromLogin.
+The master password and keys are AES-256-GCM encrypted with a server-derived
+key. The user never sees or holds them until voluntary emancipation, at which
+point both the master password and all 4 keys are returned.
 
 EMANCIPATED: User holds their own keys. Snapie only has posting authority
 (granted by the user). Active-level ops return:
@@ -219,7 +221,8 @@ POST /hive/collateralized-convert → custodial: { txId }  emancipated: { needsC
 POST /hive/claim-rewards          → { txId }  (posting-level; always proxied)  [CSRF]
 
 GET  /emancipate/status         → { custodyMode, totalUsd, thresholdUsd }
-POST /emancipate/start          → { keys: { owner, active, posting, memo } } [CSRF]
+POST /emancipate/start          → { keys: { owner, active, posting, memo }, masterPassword } [CSRF]
+                                    masterPassword: single secret all keys derive from (Hive fromLogin); null for pre-master-password accounts
 
 ### Internal (Bearer token)
 POST /internal/provision-account      → { jobId, userId }

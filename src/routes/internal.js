@@ -143,12 +143,16 @@ router.get('/jobs/:jobId', asyncMw(async (req, res) => {
 
     const serverKey = deriveServerKey(user._id.toString())
     let keys
+    let masterPassword = null
     try {
       keys = {
         owner:   decryptKey(user.encryptedKeys.owner,   serverKey),
         active:  decryptKey(user.encryptedKeys.active,  serverKey),
         posting: decryptKey(user.encryptedKeys.posting, serverKey),
         memo:    decryptKey(user.encryptedKeys.memo,    serverKey)
+      }
+      if (user.encryptedMasterPassword) {
+        masterPassword = decryptKey(user.encryptedMasterPassword, serverKey)
       }
     } catch {
       return res.status(500).json({ error: 'key_decryption_failed' })
@@ -157,10 +161,10 @@ router.get('/jobs/:jobId', asyncMw(async (req, res) => {
     // Wipe immediately — one-shot delivery
     await users().updateOne(
       { _id: user._id },
-      { $set: { custodyMode: 'emancipated', encryptedKeys: null, emancipatedAt: new Date(), updatedAt: new Date() } }
+      { $set: { custodyMode: 'emancipated', encryptedKeys: null, encryptedMasterPassword: null, emancipatedAt: new Date(), updatedAt: new Date() } }
     )
 
-    return res.json({ ...base, keys })
+    return res.json({ ...base, keys, masterPassword })
   }
 
   res.json(base)

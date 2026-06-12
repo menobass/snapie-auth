@@ -293,7 +293,7 @@ When Alice registers with that email and creates an account, the token is consum
 
 ## Emancipation
 
-Custodial users can export their private keys at any time via `POST /api/emancipate/start`. Snapie deletes its copy immediately. Once emancipated:
+Custodial users can export their private keys — and the master password those keys derive from — at any time via `POST /api/emancipate/start`. Snapie deletes its copy immediately. The master password can be imported into any Hive wallet (Keychain, PeakD) to regenerate all four keys. (`masterPassword` is `null` for accounts created before master-password support; their four keys are still returned.) Once emancipated:
 
 - Posting-level ops (vote, comment, custom_json) are still proxied via Snapie's posting authority
 - Active-level ops (transfer, power-up, etc.) return `{ needsClientSigning: true, unsignedOp, account, keyType: "active" }` for the consuming app to hand off to Aioha or Keychain
@@ -320,7 +320,7 @@ The reconcile loop runs every `ACCOUNT_RECONCILE_INTERVAL_MS` ms (default 5000).
 ## Security Notes
 
 - Email addresses are never stored in plaintext — only `HMAC-SHA256(pepper, email)`
-- Custodial keys are encrypted with `AES-256-GCM` using a key derived from `HMAC-SHA256(pepper, userId)` — no password from the user, no stored key material
+- Custodial keys are derived from a per-account master password via Hive's `fromLogin`, then encrypted with `AES-256-GCM` using a key derived from `HMAC-SHA256(pepper, userId)` — no password from the user, no stored key material. The master password is encrypted and stored the same way, and returned alongside the keys on emancipation
 - All state-mutating API calls require a CSRF double-submit token
 - `KEY_ENCRYPTION_PEPPER` must never change after first deploy — doing so makes all custodial keys unrecoverable
 - The `INTERNAL_API_KEY` is compared with `crypto.timingSafeEqual` to prevent timing attacks
