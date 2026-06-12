@@ -34,6 +34,10 @@ router.get('/fee', asyncMw(async (_req, res) => {
 
 // POST /api/payment/hive-intent — create a HIVE payment intent
 router.post('/hive-intent', authMiddleware, csrfMiddleware, intentLimiter, asyncMw(async (req, res) => {
+  const user = await getUserById(req.user.userId)
+  if (!user) return res.status(401).json({ error: 'Unauthorized' })
+  if (user.hiveUsername) return res.status(409).json({ error: 'already_linked' })
+
   try {
     const intent = await createHiveIntent(req.user.userId)
     res.status(201).json(intent)
@@ -47,6 +51,10 @@ router.post('/hive-intent', authMiddleware, csrfMiddleware, intentLimiter, async
 
 // POST /api/payment/lightning-intent — create a Lightning invoice via v4v.app
 router.post('/lightning-intent', authMiddleware, csrfMiddleware, intentLimiter, asyncMw(async (req, res) => {
+  const user = await getUserById(req.user.userId)
+  if (!user) return res.status(401).json({ error: 'Unauthorized' })
+  if (user.hiveUsername) return res.status(409).json({ error: 'already_linked' })
+
   try {
     const intent = await createLightningIntent(req.user.userId)
     res.status(201).json(intent)

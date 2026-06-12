@@ -214,7 +214,7 @@ Machine-readable contract at `/llms.txt`.
 | POST | `/api/payment/lightning-intent` | Create a Bitcoin Lightning invoice via v4v.app |
 | GET  | `/api/payment/intent/:memo` | Poll intent status (`pending` / `confirmed` / `expired`) |
 
-On confirmation, the user can call `POST /api/account/create` — the paid flag bypasses the daily free quota.
+On confirmation, the user can call `POST /api/account/create` — the paid flag bypasses the daily free quota. Both intent endpoints return `409 already_linked` if the user already has a Hive account (one account per identity is enforced).
 
 ### Account
 | Method | Path | Description |
