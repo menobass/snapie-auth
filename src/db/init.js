@@ -60,6 +60,12 @@ export async function ensureIndexes() {
     database.collection('snapieauth_free_quotas').createIndex(
       { expiresAt: 1 }, { expireAfterSeconds: 0 }
     ),
+
+    // snapieauth_payment_intents — pending HIVE / Lightning payments
+    database.collection('snapieauth_payment_intents').createIndex({ userId: 1, status: 1 }),
+    database.collection('snapieauth_payment_intents').createIndex(
+      { expiresAt: 1 }, { expireAfterSeconds: 0 }
+    ),
   ])
 
   console.log('MongoDB indexes ensured')

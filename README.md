@@ -9,9 +9,12 @@ Hive account gateway and signing proxy for [Snapie](https://snapie.io).
 - Voluntary key export (emancipation)
 - Sponsor token system for gifting free accounts (email invites, even pre-registration)
 - Daily free-account quota with public `/api/quota` endpoint for consuming apps
+- HIVE + Bitcoin Lightning (v4v.app) payments for paid account creation — no KYC
+- Account creation fee derived live from top-20 witness median — not hardcoded
 - Admin panel at `/admin.html` — sponsorships, admin management, system controls
 - Internal API for service-to-service account provisioning
 - Frontend UI at `/` with API docs at `/docs.html`
+- Support: [Discord](https://discord.gg/CgJP7t7nWy)
 
 ---
 
@@ -159,6 +162,10 @@ See `.env.example` for the full list. Key variables:
 | `RC_DELEGATION_BN` | RC delegated to new accounts in billions (default: 5) |
 | `FREE_ACCOUNTS_PER_IP_PER_DAY` | Max free account creations per IP per day (default: 2) |
 | `FREE_ACCOUNTS_GLOBAL_PER_DAY` | Max free account creations globally per day (default: 10) |
+| `SNAPIE_RECEIVING_ACCOUNT` | Hive account that receives HIVE/Lightning payments |
+| `SNAPIE_LIGHTNING_HIVE_ACCOUNT` | Hive account registered with v4v.app (defaults to `SNAPIE_RECEIVING_ACCOUNT`) |
+| `ACCOUNT_FEE_CACHE_MS` | How long to cache the witness account creation fee (default: 600000 = 10 min) |
+| `V4V_RECEIVE_CURRENCY` | Currency v4v.app converts Lightning to: `hive` or `hbd` (default: `hive`) |
 | `EMAIL_HOST` | SMTP host (e.g. `smtp.resend.com`) |
 | `EMAIL_PORT` | SMTP port (default: 465) |
 | `EMAIL_SECURE` | Use TLS (default: true) |
@@ -198,6 +205,16 @@ Machine-readable contract at `/llms.txt`.
 | GET  | `/api/auth/email/verify` | Email verification link handler (redirects to /manage.html) |
 | GET  | `/api/auth/me` | Current session |
 | POST | `/api/auth/logout` | Clear cookies |
+
+### Payments (no KYC)
+| Method | Path | Description |
+|---|---|---|
+| GET  | `/api/payment/fee` | Live account creation fee from witness median + USD equivalent |
+| POST | `/api/payment/hive-intent` | Create a HIVE payment intent — returns memo + receiving account |
+| POST | `/api/payment/lightning-intent` | Create a Bitcoin Lightning invoice via v4v.app |
+| GET  | `/api/payment/intent/:memo` | Poll intent status (`pending` / `confirmed` / `expired`) |
+
+On confirmation, the user can call `POST /api/account/create` — the paid flag bypasses the daily free quota.
 
 ### Account
 | Method | Path | Description |

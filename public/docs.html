@@ -128,6 +128,7 @@
         <li><a href="/docs.html" style="color:var(--primary)">Docs</a></li>
         <li><a href="/manage.html">Dashboard</a></li>
         <li><a href="/llms.txt">llms.txt</a></li>
+        <li><a href="https://discord.gg/CgJP7t7nWy" target="_blank" rel="noopener">Discord</a></li>
       </ul>
     </div>
   </nav>
@@ -168,6 +169,12 @@
       <a href="#hive-convert">Convert</a>
       <a href="#hive-limit-orders">Limit Orders</a>
       <a href="#hive-claim-rewards">Claim Rewards</a>
+
+      <h3>Payments</h3>
+      <a href="#payment-fee">Account Fee</a>
+      <a href="#payment-hive">Pay with HIVE</a>
+      <a href="#payment-lightning">Pay with Lightning</a>
+      <a href="#payment-intent">Intent Status</a>
 
       <h3>Emancipation</h3>
       <a href="#emancipate-status">Status</a>
@@ -601,6 +608,61 @@ aioha.signMessage(message, KeyTypes.Posting)</pre>
         <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/hive/claim-rewards</span><span class="auth-badge auth-session">Session</span><span class="auth-badge auth-csrf">CSRF</span></div>
         <p>Claim all pending reward balances (HIVE, HBD, VESTS). Posting-level op — proxied for all users including emancipated. No request body needed; amounts are read from the chain automatically.</p>
         <pre>{ "txId": "abc123..." }</pre>
+      </div>
+
+      <!-- ── PAYMENTS ───────────────────────────────────────── -->
+      <h2 id="payment-fee">GET /payment/fee</h2>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-get">GET</span><span class="endpoint-path">/payment/fee</span><span class="auth-badge auth-none">Public</span></div>
+        <p>Returns the current Hive account creation fee, derived live from the top-20 witness median via <code>get_chain_properties</code>. Cached server-side for 10 minutes — not hardcoded.</p>
+        <pre>{ "amountHive": "3.000 HIVE", "amountUsd": 1.20 }</pre>
+        <p><code>amountUsd</code> is calculated from the live HIVE price feed.</p>
+      </div>
+
+      <h2 id="payment-hive">POST /payment/hive-intent</h2>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/payment/hive-intent</span><span class="auth-badge auth-session">Session</span></div>
+        <p>Create a HIVE payment intent for account creation. The server generates a unique UUID memo. The user must send exactly the stated HIVE amount to the receiving account <em>with that memo in the transfer</em>. The server polls the Hive blockchain every 5 seconds and confirms the intent on detection. Rate limited to 10 req/hr.</p>
+        <p>No request body required.</p>
+        <pre>{
+  "memo": "a1b2c3d4-e5f6-...",
+  "receivingAccount": "snapie",
+  "amount": "3.000 HIVE",
+  "amountUsd": 1.20,
+  "expiresAt": "2026-06-12T16:30:00.000Z"
+}</pre>
+        <p>Send the transfer via Keychain or Aioha with <code>memo</code> as the transfer memo. Poll <code>GET /payment/intent/:memo</code> to track confirmation. Intent expires after 30 minutes.</p>
+      </div>
+
+      <h2 id="payment-lightning">POST /payment/lightning-intent</h2>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/payment/lightning-intent</span><span class="auth-badge auth-session">Session</span></div>
+        <p>Create a Bitcoin Lightning payment intent via <a href="https://v4v.app" target="_blank" rel="noopener">v4v.app</a>. v4v converts sats to HIVE and forwards the payment to the operator's Hive account with the memo included. Rate limited to 10 req/hr.</p>
+        <p>No request body required.</p>
+        <pre>{
+  "memo": "a1b2c3d4-e5f6-...",
+  "invoice": "lnbc1234...",
+  "amountUsd": 1.20,
+  "expiresAt": "2026-06-12T16:30:00.000Z"
+}</pre>
+        <p>Display <code>invoice</code> as a QR code for the user to scan with any Lightning wallet. Poll <code>GET /payment/intent/:memo</code> to track confirmation. Invoice expires after 30 minutes.</p>
+      </div>
+
+      <h2 id="payment-intent">GET /payment/intent/:memo</h2>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-get">GET</span><span class="endpoint-path">/payment/intent/:memo</span><span class="auth-badge auth-session">Session</span></div>
+        <p>Poll the status of a payment intent. Recommended interval: every 3–5 seconds.</p>
+        <pre>{
+  "memo": "a1b2c3d4-e5f6-...",
+  "type": "hive",
+  "status": "confirmed",
+  "txId": "abc123def456...",
+  "amountHive": "3.000 HIVE",
+  "amountUsd": 1.20,
+  "expiresAt": "2026-06-12T16:30:00.000Z"
+}</pre>
+        <p>Status values: <code>pending</code>, <code>confirmed</code>, <code>expired</code>. On <code>confirmed</code>, the user is eligible to create a Hive account via <code>POST /account/create</code> — the paid flag bypasses the daily quota check.</p>
+        <p>Returns <code>404 not_found</code> if the memo doesn't exist or belongs to a different user.</p>
       </div>
 
       <!-- ── EMANCIPATE ──────────────────────────────────────── -->

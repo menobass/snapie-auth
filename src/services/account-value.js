@@ -4,7 +4,7 @@ let _cachedPrice = null
 let _cacheTime = 0
 const PRICE_CACHE_MS = 60_000
 
-async function getHivePrice() {
+export async function getHivePrice() {
   const now = Date.now()
   if (_cachedPrice !== null && now - _cacheTime < PRICE_CACHE_MS) return _cachedPrice
 

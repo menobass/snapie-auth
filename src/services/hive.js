@@ -81,4 +81,20 @@ export function isRcError(err) {
          /rc_plugin/i.test(msg)
 }
 
+let _chainPropsCache = null
+let _chainPropsFetchedAt = 0
+
+export async function getChainProperties() {
+  const ttl = parseInt(process.env.ACCOUNT_FEE_CACHE_MS || '600000', 10)
+  if (_chainPropsCache && Date.now() - _chainPropsFetchedAt < ttl) return _chainPropsCache
+  _chainPropsCache = await client.database.call('get_chain_properties', [])
+  _chainPropsFetchedAt = Date.now()
+  return _chainPropsCache
+}
+
+export async function getAccountCreationFee() {
+  const props = await getChainProperties()
+  return props.account_creation_fee // e.g. '3.000 HIVE'
+}
+
 export { PrivateKey }

@@ -1,5 +1,6 @@
 # Snapie Auth — LLM Integration Reference
-# Version: 1.4 | Updated: 2026-06-09
+# Version: 1.5 | Updated: 2026-06-12
+# Support: https://discord.gg/CgJP7t7nWy
 # Base URL: https://auth.snapie.io/api
 
 Snapie Auth is a Hive blockchain account gateway and signing proxy.
@@ -47,11 +48,31 @@ Check remaining slots with GET /quota (public, no auth). Sponsor tokens
 bypass this limit entirely.
 
 ACCOUNT CREATION FLOW:
-1. Check GET /quota — if remaining > 0, user can proceed (or if sponsored)
+1. Check GET /quota — if remaining > 0, user can proceed (or if sponsored/paid)
 2. POST /account/create → returns jobId
 3. Poll GET /account/job/:jobId every 3-5 seconds
 4. Status: pending → broadcasting → acked → confirmed (or failed/expired)
 5. On confirmed: user.hiveUsername is set
+
+PAID ACCOUNT CREATION FLOW (no KYC):
+Account creation fee is always the live witness median — never hardcoded.
+Two payment rails, both deposit HIVE to the operator's account:
+
+HIVE payment:
+1. GET /payment/fee → { amountHive, amountUsd }
+2. POST /payment/hive-intent → { memo, receivingAccount, amount, expiresAt }
+3. User sends exactly `amount` HIVE to `receivingAccount` with `memo` as transfer memo
+4. Poll GET /payment/intent/:memo every 3-5 seconds
+5. On confirmed: POST /account/create proceeds (paid flag bypasses daily quota)
+
+Lightning payment (via v4v.app — converts sats → HIVE, sends to same account):
+1. GET /payment/fee → { amountHive, amountUsd }
+2. POST /payment/lightning-intent → { memo, invoice, amountUsd, expiresAt }
+3. Display `invoice` as QR code for user's Lightning wallet
+4. Poll GET /payment/intent/:memo every 3-5 seconds
+5. On confirmed: POST /account/create proceeds
+
+Intent statuses: pending | confirmed | expired (TTL 30 min)
 
 ## Quick Start Integration
 
@@ -183,7 +204,8 @@ account via POST /account/create. Always check hiveUsername before using it.
 ### Public (no auth)
 GET  /health                    → { ok: true }
 GET  /quota                     → { total, used, remaining, resetsAt }
-GET  /public-config             → { googleClientId, hiveNetwork }
+GET  /public-config             → { googleClientId, hiveNetwork, discordUrl }
+GET  /payment/fee               → { amountHive, amountUsd }
 POST /auth/google               → session cookies set + { user: SnapieUser }
 POST /auth/email/register       → 202 { pending: true } — sends verification email
 POST /auth/email/login          → session cookies set + { user: SnapieUser }
@@ -199,6 +221,10 @@ GET  /account/check-username/:u → { available, reason? }
 POST /account/create            → { jobId, sponsored }   [CSRF]
 GET  /account/job/:jobId        → { status, txId, error }
 GET  /account/value             → { hiveBalance, hbdBalance, vestingShares, hiveValueUsd, hbdValueUsd, vestingValueUsd, totalValueUsd, emancipationRequired }
+
+POST /payment/hive-intent       → { memo, receivingAccount, amount, amountUsd, expiresAt }   (10/hr)
+POST /payment/lightning-intent  → { memo, invoice, amountUsd, expiresAt }                    (10/hr)
+GET  /payment/intent/:memo      → { memo, type, status, txId, amountHive, amountUsd, expiresAt }
 
 POST /link/verify-challenge     → { challenge, snapieAccount }  [CSRF]
 POST /link/confirm              → { ok, hiveUsername }          [CSRF]

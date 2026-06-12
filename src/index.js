@@ -9,6 +9,7 @@ import { rateLimit } from 'express-rate-limit'
 import { connect } from './services/db.js'
 import { ensureIndexes } from './db/init.js'
 import { startReconcileLoop } from './services/account-jobs.js'
+import { startPaymentPollLoop } from './services/payment.js'
 import { getGlobalQuotaInfo } from './services/free-quota.js'
 import authRoutes from './routes/auth.js'
 import accountRoutes from './routes/account.js'
@@ -17,6 +18,7 @@ import hiveRoutes from './routes/hive.js'
 import emancipateRoutes from './routes/emancipate.js'
 import adminRoutes from './routes/admin.js'
 import internalRoutes from './routes/internal.js'
+import paymentRoutes from './routes/payment.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const PUBLIC_DIR = join(__dirname, '..', 'public')
@@ -97,6 +99,7 @@ app.use('/api/hive',                      hiveRoutes)
 app.use('/api/emancipate',           emancLimiter, emancipateRoutes)
 app.use('/api/admin',                adminRoutes)
 app.use('/api/internal',             internalRoutes)
+app.use('/api/payment',              paymentRoutes)
 
 // Public quota — how many free account slots remain today
 app.get('/api/quota', async (_req, res, next) => {
@@ -109,7 +112,8 @@ app.get('/api/quota', async (_req, res, next) => {
 app.get('/api/public-config', (_req, res) => {
   res.json({
     googleClientId: process.env.GOOGLE_CLIENT_ID || null,
-    hiveNetwork: process.env.HIVE_NETWORK || 'mainnet'
+    hiveNetwork: process.env.HIVE_NETWORK || 'mainnet',
+    discordUrl: 'https://discord.gg/CgJP7t7nWy'
   })
 })
 
@@ -130,6 +134,7 @@ async function start() {
   await connect()
   await ensureIndexes()
   startReconcileLoop()
+  startPaymentPollLoop()
   app.listen(PORT, () => console.log(`snapie-auth listening on port ${PORT}`))
 }
 

@@ -40,7 +40,7 @@ export async function checkUsernameAvailability(username) {
   return { available: true, error: null }
 }
 
-export async function createJob({ userId, username, custodyMode, ownerPub, activePub, postingPub, memoPub, sponsorTokenId = null, provisionNote = null, returnKeysOnce = false }) {
+export async function createJob({ userId, username, custodyMode, ownerPub, activePub, postingPub, memoPub, sponsorTokenId = null, provisionNote = null, returnKeysOnce = false, hasPaidCreation = false }) {
   const jobId = crypto.randomUUID()
   const now = new Date()
 
@@ -69,6 +69,7 @@ export async function createJob({ userId, username, custodyMode, ownerPub, activ
     sponsorTokenId: sponsorTokenId || null,
     provisionNote: provisionNote || null,
     returnKeysOnce,
+    hasPaidCreation,
     status: 'pending',
     txId: null,
     ackAt: null,
@@ -114,6 +115,10 @@ async function failJob(job, reason) {
       $unset: { liveUsername: '' }
     }
   )
+  // Restore paid flag so user can retry without paying again
+  if (job.hasPaidCreation) {
+    await users().updateOne({ _id: job.userId }, { $set: { hasPaidAccountCreation: true } })
+  }
 }
 
 async function sleep(ms) {
@@ -233,10 +238,17 @@ export async function confirmAckedJob(job) {
 
 export async function reconcileTick() {
   try {
-    // 1. Expire stale jobs
+    // 1. Expire stale jobs — restore hasPaidCreation flag first so users can retry
+    const now = new Date()
+    const expiringPaid = await accountJobs()
+      .find({ status: { $in: ['pending', 'broadcasting', 'acked'] }, expiresAt: { $lt: now }, hasPaidCreation: true })
+      .toArray()
+    for (const job of expiringPaid) {
+      await users().updateOne({ _id: job.userId }, { $set: { hasPaidAccountCreation: true } })
+    }
     await accountJobs().updateMany(
-      { status: { $in: ['pending', 'broadcasting', 'acked'] }, expiresAt: { $lt: new Date() } },
-      { $set: { status: 'expired', failedAt: new Date() }, $unset: { liveUsername: '' } }
+      { status: { $in: ['pending', 'broadcasting', 'acked'] }, expiresAt: { $lt: now } },
+      { $set: { status: 'expired', failedAt: now }, $unset: { liveUsername: '' } }
     )
 
     // 2. Pick up pending jobs (limit 5 per tick)

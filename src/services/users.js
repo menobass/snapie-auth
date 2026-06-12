@@ -49,6 +49,12 @@ export async function getUserById(id) {
   return users().findOne({ _id: oid })
 }
 
+export async function clearPaidAccountCreation(id) {
+  const oid = toOid(id)
+  if (!oid) return
+  await users().updateOne({ _id: oid }, { $unset: { hasPaidAccountCreation: '' } })
+}
+
 export function shapeUser(user, extra = {}) {
   return {
     id: user._id.toString(),

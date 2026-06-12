@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { asyncMw } from '../services/async-middleware.js'
 import { authMiddleware } from '../services/auth.js'
 import { csrfMiddleware } from '../services/csrf.js'
-import { getUserById } from '../services/users.js'
+import { getUserById, clearPaidAccountCreation } from '../services/users.js'
 import {
   checkUsernameAvailability,
   createJob,
@@ -31,11 +31,13 @@ router.get('/eligibility', authMiddleware, asyncMw(async (req, res) => {
     sponsorToken = await findValidToken(user.emailHash)
   }
 
-  if (user.everHadAccount && !sponsorToken) {
+  const hasPaid = user.hasPaidAccountCreation || false
+
+  if (user.everHadAccount && !sponsorToken && !hasPaid) {
     return res.json({ canCreate: false, canLinkExisting: true, reason: 'previously_had_account' })
   }
 
-  if (!sponsorToken) {
+  if (!sponsorToken && !hasPaid) {
     const quota = await checkFreeQuota(req.ip)
     if (!quota.allowed) {
       return res.json({ canCreate: false, canLinkExisting: true, reason: quota.reason })
@@ -58,7 +60,8 @@ router.get('/eligibility', authMiddleware, asyncMw(async (req, res) => {
     canCreate: true,
     canLinkExisting: true,
     reason: null,
-    sponsored: !!sponsorToken  // frontend can show "🎉 You have a sponsored account!"
+    sponsored: !!sponsorToken,
+    alreadyPaid: hasPaid
   })
 }))
 
@@ -81,11 +84,13 @@ router.post('/create', authMiddleware, csrfMiddleware, asyncMw(async (req, res) 
     sponsorToken = await findValidToken(user.emailHash)
   }
 
-  if (user.everHadAccount && !sponsorToken) {
+  const hasPaid = user.hasPaidAccountCreation || false
+
+  if (user.everHadAccount && !sponsorToken && !hasPaid) {
     return res.status(403).json({ error: 'previously_had_account' })
   }
 
-  if (!sponsorToken) {
+  if (!sponsorToken && !hasPaid) {
     const quota = await consumeFreeQuota(req.ip)
     if (!quota.allowed) {
       return res.status(429).json({ error: quota.reason })
@@ -127,17 +132,20 @@ router.post('/create', authMiddleware, csrfMiddleware, asyncMw(async (req, res) 
     username,
     custodyMode,
     ownerPub, activePub, postingPub, memoPub,
-    sponsorTokenId: sponsorToken?._id || null
+    sponsorTokenId: sponsorToken?._id || null,
+    hasPaidCreation: hasPaid
   })
 
   // Consume the sponsor token atomically now that the job is queued
   if (sponsorToken) {
     await consumeToken(sponsorToken._id, user._id)
+  } else if (hasPaid) {
+    await clearPaidAccountCreation(user._id.toString())
   }
 
   res.status(201).json({
     jobId: job._id,
-    sponsored: !!sponsorToken
+    sponsored: !!sponsorToken || hasPaid
   })
 }))
 
