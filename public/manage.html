@@ -492,6 +492,68 @@
       container.appendChild(div)
     }
 
+    // Render the full set of secrets: master password (when available) first,
+    // then the four role keys, then a button to download a .txt backup.
+    function renderKeySet(container, keys, masterPassword) {
+      container.innerHTML = ''
+      const account = currentUser?.hiveUsername || ''
+      if (masterPassword) {
+        renderKeyBlock(container, 'Master Password (regenerates all keys)', masterPassword)
+      }
+      renderKeyBlock(container, 'Owner', keys.owner)
+      renderKeyBlock(container, 'Active', keys.active)
+      renderKeyBlock(container, 'Posting', keys.posting)
+      renderKeyBlock(container, 'Memo', keys.memo)
+
+      const dl = document.createElement('button')
+      dl.className = 'btn btn-outline btn-full mt-4'
+      dl.textContent = 'Download backup (.txt)'
+      dl.addEventListener('click', () => downloadBackup(account, keys, masterPassword))
+      container.appendChild(dl)
+    }
+
+    // Build and download a plain-text backup of the account secrets.
+    function downloadBackup(account, keys, masterPassword) {
+      const lines = [
+        'SNAPIE — HIVE ACCOUNT BACKUP',
+        '============================',
+        '',
+        'Account:  @' + account,
+        ''
+      ]
+      if (masterPassword) {
+        lines.push(
+          'Master Password (regenerates all four keys below in any Hive wallet):',
+          masterPassword,
+          ''
+        )
+      } else {
+        lines.push(
+          'Master Password: not available for this account',
+          '(created before master-password support — use the individual keys below)',
+          ''
+        )
+      }
+      lines.push(
+        'Owner Key:    ' + keys.owner,
+        'Active Key:   ' + keys.active,
+        'Posting Key:  ' + keys.posting,
+        'Memo Key:     ' + keys.memo,
+        '',
+        'KEEP THIS FILE SECRET. Anyone with these keys controls your account.',
+        'Snapie does not keep a copy — store this somewhere safe.'
+      )
+      const blob = new Blob([lines.join('\n')], { type: 'text/plain' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'snapie-hive-' + (account || 'account') + '.txt'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    }
+
     function formatUsd(n) {
       if (n === undefined || n === null) return '—'
       return '$' + Number(n).toFixed(2)
@@ -687,7 +749,7 @@
               currentUser = me.user
               if (selectedCustody === 'custodial' && data.keys) {
                 // Show keys once (provision endpoint with returnKeysOnce)
-                showKeysOnce(data.keys)
+                showKeysOnce(data.keys, data.masterPassword)
               } else {
                 loadCustodialState()
                 showState('state-custodial')
@@ -701,14 +763,10 @@
       }, 3000)
     }
 
-    function showKeysOnce(keys) {
+    function showKeysOnce(keys, masterPassword) {
       const display = document.getElementById('keys-display')
       const container = document.getElementById('keys-container')
-      container.innerHTML = ''
-      renderKeyBlock(container, 'Owner', keys.owner)
-      renderKeyBlock(container, 'Active', keys.active)
-      renderKeyBlock(container, 'Posting', keys.posting)
-      renderKeyBlock(container, 'Memo', keys.memo)
+      renderKeySet(container, keys, masterPassword)
       display.style.display = 'block'
       document.getElementById('polling-card').classList.add('hidden')
     }
@@ -853,12 +911,8 @@
       try {
         const data = await api('POST', '/emancipate/start')
         const container = document.getElementById('emancipate-keys-container')
-        container.innerHTML = ''
         if (data.keys) {
-          renderKeyBlock(container, 'Owner', data.keys.owner)
-          renderKeyBlock(container, 'Active', data.keys.active)
-          renderKeyBlock(container, 'Posting', data.keys.posting)
-          renderKeyBlock(container, 'Memo', data.keys.memo)
+          renderKeySet(container, data.keys, data.masterPassword)
         }
         document.getElementById('emancipate-keys-display').classList.remove('hidden')
         btn.closest('.card').style.display = 'none'

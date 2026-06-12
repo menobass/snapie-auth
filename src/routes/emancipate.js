@@ -56,14 +56,19 @@ router.post('/start', authMiddleware, csrfMiddleware, asyncMw(async (req, res) =
   // Derive the server-side key — deterministic from pepper + userId
   const serverKey = deriveServerKey(user._id.toString())
 
-  // Decrypt all four keys
+  // Decrypt all four keys, plus the master password if this account has one.
+  // Accounts created before master-password support have no encryptedMasterPassword.
   let decryptedKeys
+  let masterPassword = null
   try {
     decryptedKeys = {
       owner:   decryptKey(user.encryptedKeys.owner,   serverKey),
       active:  decryptKey(user.encryptedKeys.active,  serverKey),
       posting: decryptKey(user.encryptedKeys.posting, serverKey),
       memo:    decryptKey(user.encryptedKeys.memo,    serverKey)
+    }
+    if (user.encryptedMasterPassword) {
+      masterPassword = decryptKey(user.encryptedMasterPassword, serverKey)
     }
   } catch {
     return res.status(500).json({ error: 'decryption_failed' })
@@ -85,6 +90,7 @@ router.post('/start', authMiddleware, csrfMiddleware, asyncMw(async (req, res) =
       $set: {
         custodyMode: 'emancipated',
         encryptedKeys: null,
+        encryptedMasterPassword: null,
         emancipatedAt: new Date(),
         updatedAt: new Date()
       }
@@ -93,6 +99,7 @@ router.post('/start', authMiddleware, csrfMiddleware, asyncMw(async (req, res) =
 
   res.json({
     keys: decryptedKeys,
+    masterPassword,
     message: 'Save these keys now. They will not be shown again. This server has deleted its copy.'
   })
 }))
@@ -109,6 +116,7 @@ router.post('/confirm', authMiddleware, csrfMiddleware, asyncMw(async (req, res)
       $set: {
         custodyMode: 'emancipated',
         encryptedKeys: null,
+        encryptedMasterPassword: null,
         emancipatedAt: user.emancipatedAt || new Date(),
         updatedAt: new Date()
       }

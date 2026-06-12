@@ -214,7 +214,7 @@
       <p>All state-mutating requests must include the CSRF token as the <code>x-csrf-token</code> header. Always send <code>credentials: 'include'</code> in fetch calls. There is no Bearer token for user-facing APIs.</p>
 
       <h2 id="custody-modes">Custody Modes</h2>
-      <p><strong>Custodial</strong> — Snapie generates all four Hive keypairs (owner, active, posting, memo) server-side. Keys are AES-256-GCM encrypted using a server-derived key. The user never sees them until voluntary emancipation. All signing — posting and active — is handled transparently.</p>
+      <p><strong>Custodial</strong> — Snapie generates all four Hive keypairs (owner, active, posting, memo) server-side, derived from a single master password via Hive's <code>fromLogin</code>. The master password and keys are AES-256-GCM encrypted using a server-derived key. The user never sees them until voluntary emancipation, when both the master password and all four keys are returned. All signing — posting and active — is handled transparently.</p>
       <p><strong>Emancipated</strong> — User holds their own keys. Snapie only has posting authority (granted by the user). Posting-level ops are still proxied. Active-level ops return an unsigned operation for the client to sign via Aioha or Keychain:</p>
       <pre>{ "needsClientSigning": true, "unsignedOp": ["op_name", {...}], "account": "alice", "keyType": "active" }</pre>
       <p>The <code>account</code> and <code>keyType</code> fields are always present so the consuming app can call Aioha or Keychain directly without additional context.</p>
@@ -620,8 +620,9 @@ aioha.signMessage(message, KeyTypes.Posting)</pre>
       <h2 id="emancipate-start">POST /emancipate/start</h2>
       <div class="endpoint">
         <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/emancipate/start</span><span class="auth-badge auth-session">Session</span><span class="auth-badge auth-csrf">CSRF</span></div>
-        <p>Decrypt and return all four private keys. Immediately wipes the encrypted copies from the server. Custodial accounts only. 5 req/hr. This action is irreversible.</p>
+        <p>Decrypt and return all four private keys, plus the master password they derive from. Immediately wipes the encrypted copies from the server. Custodial accounts only. 5 req/hr. This action is irreversible.</p>
         <p>Before returning keys, verifies them against on-chain public keys to guarantee correctness.</p>
+        <p><code>masterPassword</code> is the single secret all four keys derive from (importable into any Hive wallet to regenerate them). It is <code>null</code> for accounts created before master-password support.</p>
         <pre>{
   "keys": {
     "owner":   "5J...",
@@ -629,6 +630,7 @@ aioha.signMessage(message, KeyTypes.Posting)</pre>
     "posting": "5J...",
     "memo":    "5J..."
   },
+  "masterPassword": "P5J...",
   "message": "Save these keys now. They will not be shown again. This server has deleted its copy."
 }</pre>
       </div>

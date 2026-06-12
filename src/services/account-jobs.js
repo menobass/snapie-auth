@@ -46,11 +46,12 @@ export async function createJob({ userId, username, custodyMode, ownerPub, activ
 
   let keys
   if (custodyMode === 'custodial') {
-    // Server generates and encrypts all keypairs — user never touches private keys
-    keys = generateAndEncryptKeys(userId)
+    // Server generates and encrypts all keypairs — user never touches private keys.
+    // All keys are derived from a single master password (also encrypted & stored).
+    keys = generateAndEncryptKeys(userId, username)
   } else {
     // Emancipated: browser provided public keys, no server-side private key storage
-    keys = { ownerPub, activePub, postingPub, memoPub, encryptedKeys: null }
+    keys = { ownerPub, activePub, postingPub, memoPub, encryptedKeys: null, encryptedMasterPassword: null }
   }
 
   const job = {
@@ -64,6 +65,7 @@ export async function createJob({ userId, username, custodyMode, ownerPub, activ
     memoPub: keys.memoPub,
     custodyMode,
     encryptedKeys: keys.encryptedKeys,
+    encryptedMasterPassword: keys.encryptedMasterPassword,
     sponsorTokenId: sponsorTokenId || null,
     provisionNote: provisionNote || null,
     returnKeysOnce,
@@ -221,6 +223,7 @@ export async function confirmAckedJob(job) {
         hiveUsername: job.username,
         custodyMode: job.custodyMode,
         encryptedKeys: job.custodyMode === 'custodial' ? job.encryptedKeys : null,
+        encryptedMasterPassword: job.custodyMode === 'custodial' ? (job.encryptedMasterPassword || null) : null,
         everHadAccount: true,
         updatedAt: new Date()
       }
