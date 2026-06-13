@@ -1,11 +1,11 @@
 # Snapie Auth — LLM Integration Reference
-# Version: 1.5 | Updated: 2026-06-12
+# Version: 1.6 | Updated: 2026-06-13
 # Support: https://discord.gg/CgJP7t7nWy
 # Base URL: https://auth.snapie.io/api
 
 Snapie Auth is a Hive blockchain account gateway and signing proxy.
-It authenticates users via Google OAuth or email/password, creates
-custodial Hive accounts, and signs Hive operations on behalf of users.
+It authenticates users via Google OAuth, Sign in with Apple, or email/password,
+creates custodial Hive accounts, and signs Hive operations on behalf of users.
 
 ## Authentication Model
 
@@ -84,7 +84,7 @@ if (quota.remaining === 0) {
   // show "no slots today — request a sponsor invite or try tomorrow"
 }
 
-// 2. Google login — returns { user: SnapieUser } directly, no extra /auth/me needed
+// 2a. Google login — returns { user: SnapieUser } directly, no extra /auth/me needed
 async function loginWithGoogle(idToken) {
   const res = await fetch('/api/auth/google', {
     method: 'POST',
@@ -94,6 +94,21 @@ async function loginWithGoogle(idToken) {
   })
   const { user } = await res.json()
   // user.hiveUsername is null until account is created
+  return user
+}
+
+// 2b. Apple Sign-In — identityToken from ASAuthorizationAppleIDCredential.
+// IMPORTANT: iOS only provides name on the very first sign-in. Pass it then; omit on subsequent logins.
+// The server preserves the stored name if name is absent.
+async function loginWithApple(identityToken, name = null) {
+  const res = await fetch('/api/auth/apple', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ identityToken, name })
+    // name: { firstName: "John", lastName: "Doe" } | null
+  })
+  const { user } = await res.json()
   return user
 }
 
@@ -207,6 +222,7 @@ GET  /quota                     → { total, used, remaining, resetsAt }
 GET  /public-config             → { googleClientId, hiveNetwork, discordUrl }
 GET  /payment/fee               → { amountHive, amountUsd }
 POST /auth/google               → session cookies set + { user: SnapieUser }
+POST /auth/apple                → session cookies set + { user: SnapieUser }
 POST /auth/email/register       → 202 { pending: true } — sends verification email
 POST /auth/email/login          → session cookies set + { user: SnapieUser }
 POST /auth/email/resend         → 200 { ok: true }
@@ -293,6 +309,27 @@ Common codes:
   not_custodial             — action requires custodial mode
   user_not_found            — no account with that email (admin: grant admin)
   cannot_demote_self        — admin tried to revoke their own admin access
+
+## Apple Sign-In (/auth/apple)
+
+POST /api/auth/apple
+Body: { identityToken: string, name?: { firstName: string, lastName?: string } | null }
+Returns: { user: SnapieUser }
+
+identityToken: JWT from ASAuthorizationAppleIDCredential.identityToken (iOS native SDK)
+name: ONLY send on the user's very first Apple sign-in. iOS only provides name/email once;
+      on subsequent logins both are absent from the token. The server preserves the saved
+      name automatically — sending null/omitting name on re-login does not wipe it.
+
+Server validates the token against Apple's JWKS (https://appleid.apple.com/auth/keys),
+checks iss=https://appleid.apple.com and aud=APPLE_CLIENT_ID (your app's Bundle ID).
+
+Apple may issue a relay email (e.g. xyz@privaterelay.appleid.com) — treat it as opaque.
+The stable unique ID is the `sub` claim in the identity token, stored as providerId.
+
+Environment variable: APPLE_CLIENT_ID = your Bundle ID, e.g. "io.snapie.app"
+Required by App Store: any app offering third-party login (Google, etc.) must also
+offer Sign in with Apple (App Store Review Guideline 4.8).
 
 ## Rate Limits (per IP)
   /api/auth/*               30 req / 15 min

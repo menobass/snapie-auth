@@ -1,4 +1,5 @@
 import crypto from 'crypto'
+import jwt from 'jsonwebtoken'
 import { Router } from 'express'
 import argon2 from 'argon2'
 import { asyncMw } from '../services/async-middleware.js'
@@ -63,6 +64,78 @@ router.post('/google', asyncMw(async (req, res) => {
   })
 
   const shaped = startSession(res, user, googleUser.email)
+  res.json({ user: shaped })
+}))
+
+// Apple JWKS — cached for 1 hour to avoid hitting Apple on every login
+let appleKeysCache = null
+let appleKeysCachedAt = 0
+
+async function getApplePublicKeys() {
+  const now = Date.now()
+  if (appleKeysCache && now - appleKeysCachedAt < 60 * 60 * 1000) return appleKeysCache
+  const res = await fetch('https://appleid.apple.com/auth/keys', { signal: AbortSignal.timeout(5000) })
+  if (!res.ok) throw new Error('failed to fetch Apple public keys')
+  const { keys } = await res.json()
+  appleKeysCache = keys
+  appleKeysCachedAt = now
+  return keys
+}
+
+async function verifyAppleToken(identityToken) {
+  const [headerB64] = identityToken.split('.')
+  let header
+  try { header = JSON.parse(Buffer.from(headerB64, 'base64url').toString()) } catch { return null }
+
+  const keys = await getApplePublicKeys()
+  const jwk = keys.find(k => k.kid === header.kid)
+  if (!jwk) return null
+
+  const publicKey = crypto.createPublicKey({ key: jwk, format: 'jwk' })
+  try {
+    const payload = jwt.verify(identityToken, publicKey, {
+      algorithms: ['RS256'],
+      issuer: 'https://appleid.apple.com',
+      audience: process.env.APPLE_CLIENT_ID  // App Bundle ID, e.g. "io.snapie.app"
+    })
+    if (!payload.sub) return null
+    return payload
+  } catch { return null }
+}
+
+// POST /api/auth/apple
+router.post('/apple', asyncMw(async (req, res) => {
+  const { identityToken, name } = req.body
+  if (!identityToken || typeof identityToken !== 'string') {
+    return res.status(400).json({ error: 'identityToken required' })
+  }
+
+  const appleUser = await verifyAppleToken(identityToken)
+  if (!appleUser) {
+    return res.status(401).json({ error: 'invalid_credential' })
+  }
+
+  // Apple only sends email and name on the very first sign-in.
+  // On subsequent logins both will be absent — upsertUser preserves whatever was saved.
+  const email = typeof appleUser.email === 'string' ? appleUser.email : null
+  const emailHash = email ? hashEmail(email) : null
+
+  let displayName = null
+  if (name && typeof name === 'object') {
+    const parts = [name.firstName, name.lastName].filter(Boolean)
+    if (parts.length) displayName = parts.join(' ')
+  }
+
+  const user = await upsertUser({
+    provider: 'apple',
+    providerId: appleUser.sub,
+    emailHash,
+    name: displayName,
+    picture: null,
+    emailVerified: true
+  })
+
+  const shaped = startSession(res, user, email)
   res.json({ user: shaped })
 }))
 

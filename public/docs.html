@@ -144,6 +144,7 @@
 
       <h3>Authentication</h3>
       <a href="#auth-google">Google OAuth</a>
+      <a href="#auth-apple">Apple Sign-In</a>
       <a href="#auth-email">Email / Password</a>
       <a href="#auth-me">Session</a>
       <a href="#auth-logout">Logout</a>
@@ -287,6 +288,58 @@
   }
 }</pre>
         <p><code>hiveUsername</code> is <code>null</code> until the user creates or links a Hive account.</p>
+      </div>
+
+      <h2 id="auth-apple">POST /auth/apple</h2>
+      <div class="endpoint">
+        <div class="endpoint-header">
+          <span class="method method-post">POST</span>
+          <span class="endpoint-path">/auth/apple</span>
+          <span class="auth-badge auth-none">Public</span>
+        </div>
+        <p>Sign in or register with an Apple identity token. Creates a user record on first login. Sets session and CSRF cookies.</p>
+        <p><strong>Apple quirk:</strong> iOS only provides the user's name and email on the <em>very first</em> sign-in. On all subsequent logins Apple returns neither — the server preserves whatever was saved. Your mobile app must pass <code>name</code> on the first login and omit it (or send <code>null</code>) on subsequent ones.</p>
+        <h3>Request</h3>
+        <table><thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td>identityToken</td><td>string</td><td>JWT from <code>ASAuthorizationAppleIDCredential.identityToken</code></td></tr>
+          <tr><td>name</td><td>object|null</td><td>Optional. <code>{ firstName, lastName }</code> — only sent on first sign-in. Ignored if both fields are absent.</td></tr>
+        </tbody></table>
+        <h3>Response — <code>{ user: SnapieUser }</code></h3>
+        <pre>{
+  "user": {
+    "id": "6a272a4eac383450fbb0bc30",
+    "name": "Alice Doe",
+    "picture": null,
+    "hiveUsername": null,
+    "custodyMode": null,
+    "isAdmin": false
+  }
+}</pre>
+        <p><code>hiveUsername</code> is <code>null</code> until the user creates or links a Hive account.</p>
+        <h3>Environment variable</h3>
+        <p>Set <code>APPLE_CLIENT_ID</code> to your app's Bundle ID (e.g. <code>io.snapie.app</code>). The server validates the <code>aud</code> claim in the identity token against this value.</p>
+        <h3>React Native example</h3>
+        <pre>import { appleAuth } from '@invertase/react-native-apple-authentication'
+
+const appleAuthRequestResponse = await appleAuth.performRequest({
+  requestedOperation: appleAuth.Operation.LOGIN,
+  requestedScopes: [appleAuth.Scope.EMAIL, appleAuth.Scope.FULL_NAME],
+})
+
+const { identityToken, fullName } = appleAuthRequestResponse
+// fullName.givenName / familyName are only populated on first sign-in
+const name = fullName?.givenName
+  ? { firstName: fullName.givenName, lastName: fullName.familyName ?? undefined }
+  : null
+
+const res = await fetch('/api/auth/apple', {
+  method: 'POST',
+  credentials: 'include',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ identityToken, name }),
+})
+const { user } = await res.json()</pre>
       </div>
 
       <h2 id="auth-email">Email / Password</h2>

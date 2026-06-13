@@ -12,15 +12,19 @@ export function hashEmail(email) {
 
 export async function upsertUser({ provider, providerId, emailHash, name, picture, emailVerified }) {
   const now = new Date()
+  // Only overwrite name/picture when the provider actually supplies them.
+  // Apple sends them only on first sign-in; omitting here preserves the saved value on re-logins.
+  const setFields = { updatedAt: now }
+  if (provider !== 'email' && name) setFields.name = name
+  if (provider !== 'email' && picture) setFields.picture = picture
+
   const result = await users().findOneAndUpdate(
     { provider, providerId },
     {
-      $set: {
-        name: provider !== 'email' ? (name || null) : null,
-        picture: provider !== 'email' ? (picture || null) : null,
-        updatedAt: now
-      },
+      $set: setFields,
       $setOnInsert: {
+        name: null,
+        picture: null,
         provider,
         providerId,
         emailHash: emailHash || null,
