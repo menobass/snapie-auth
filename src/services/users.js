@@ -23,8 +23,8 @@ export async function upsertUser({ provider, providerId, emailHash, name, pictur
     {
       $set: setFields,
       $setOnInsert: {
-        name: null,
-        picture: null,
+        ...(!setFields.name && { name: null }),
+        ...(!setFields.picture && { picture: null }),
         provider,
         providerId,
         emailHash: emailHash || null,
