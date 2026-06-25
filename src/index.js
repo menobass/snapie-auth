@@ -19,6 +19,7 @@ import emancipateRoutes from './routes/emancipate.js'
 import adminRoutes from './routes/admin.js'
 import internalRoutes from './routes/internal.js'
 import paymentRoutes from './routes/payment.js'
+import licenseRoutes from './routes/license.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const PUBLIC_DIR = join(__dirname, '..', 'public')
@@ -78,6 +79,7 @@ const broadcastLimiter= rl(60 * 1000,        60)   // 60/min
 const signLimiter     = rl(60 * 1000,        30)   // 30/min
 const transferLimiter = rl(60 * 1000,        10)   // 10/min
 const emancLimiter    = rl(60 * 60 * 1000,  5)    // 5/hr
+const licenseLimiter  = rl(60 * 1000,        10)   // 10/min
 
 // ── Routes ────────────────────────────────────────────────────
 app.use('/api/auth/email/resend',      resendLimiter)
@@ -100,6 +102,12 @@ app.use('/api/emancipate',           emancLimiter, emancipateRoutes)
 app.use('/api/admin',                adminRoutes)
 app.use('/api/internal',             internalRoutes)
 app.use('/api/payment',              paymentRoutes)
+app.use('/api/license/activate',     licenseLimiter)
+app.use('/api/license',              licenseRoutes)
+
+// Plugin-licensing redirect entry point — see internal-docs/HANDOFF_SNAPIE_REDIRECT.md
+// (login-callback.html is served directly by express.static below, like manage.html/docs.html)
+app.get('/login', (_req, res) => res.sendFile(join(PUBLIC_DIR, 'login.html')))
 
 // Public quota — how many free account slots remain today
 app.get('/api/quota', async (_req, res, next) => {
@@ -113,7 +121,9 @@ app.get('/api/public-config', (_req, res) => {
   res.json({
     googleClientId: process.env.GOOGLE_CLIENT_ID || null,
     hiveNetwork: process.env.HIVE_NETWORK || 'mainnet',
-    discordUrl: 'https://discord.gg/CgJP7t7nWy'
+    discordUrl: 'https://discord.gg/CgJP7t7nWy',
+    licenseRedirectHosts: (process.env.LICENSE_REDIRECT_HOSTS || 'licensing.menosoft.xyz')
+      .split(',').map(h => h.trim()).filter(Boolean)
   })
 })
 

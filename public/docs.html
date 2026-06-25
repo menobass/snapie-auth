@@ -177,6 +177,10 @@
       <a href="#payment-lightning">Pay with Lightning</a>
       <a href="#payment-intent">Intent Status</a>
 
+      <h3>Plugin Licensing</h3>
+      <a href="#license-login">Login Redirect</a>
+      <a href="#license-activate">POST /license/activate</a>
+
       <h3>Emancipation</h3>
       <a href="#emancipate-status">Status</a>
       <a href="#emancipate-start">Export Keys</a>
@@ -716,6 +720,29 @@ aioha.signMessage(message, KeyTypes.Posting)</pre>
 }</pre>
         <p>Status values: <code>pending</code>, <code>confirmed</code>, <code>expired</code>. On <code>confirmed</code>, the user is eligible to create a Hive account via <code>POST /account/create</code> — the paid flag bypasses the daily quota check.</p>
         <p>Returns <code>404 not_found</code> if the memo doesn't exist or belongs to a different user.</p>
+      </div>
+
+      <!-- ── PLUGIN LICENSING ───────────────────────────────────── -->
+      <h2 id="license-login">GET /login</h2>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-get">GET</span><span class="endpoint-path">/login</span><span class="auth-badge auth-none">Public</span></div>
+        <p>Entry point for plugin license activation. A plugin's activation page redirects the user here with <code>redirect</code>, <code>plugin</code>, and <code>machine</code> query params. The user signs in with Google; Snapie gets-or-creates their custodial Hive account, broadcasts the activation op, and redirects back to <code>redirect</code> with <code>hive_user</code> and <code>status</code> appended. No further API calls are needed by the activation page.</p>
+        <pre>https://auth.snapie.io/login
+  ?redirect=https://licensing.menosoft.xyz/activate
+  &amp;plugin=pechi_saturator
+  &amp;machine=a3f9b2c1d4e5f6a7</pre>
+        <p><code>redirect</code> must point at one of the hostnames in <code>LICENSE_REDIRECT_HOSTS</code> (default <code>licensing.menosoft.xyz</code>) or the page refuses to proceed. <code>machine</code> must be 16 hex characters.</p>
+      </div>
+
+      <h2 id="license-activate">POST /license/activate</h2>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/license/activate</span><span class="auth-badge auth-session">Session</span></div>
+        <p>Internal endpoint used by the <code>/login</code> flow after Google sign-in. Reuses the user's existing custodial Hive account if they have one, otherwise auto-generates a username and creates one. Broadcasts a <code>pechi_license</code> custom_json <code>activate</code> op from the account.</p>
+        <h3>Request</h3>
+        <pre>{ "plugin": "pechi_saturator", "machine": "a3f9b2c1d4e5f6a7" }</pre>
+        <h3>Response</h3>
+        <pre>{ "status": "activated", "hiveUser": "josemena-a1b2c3" }</pre>
+        <p>On failure: <code>{ "status": "error", "error": "no_acts" | "timeout" | "insufficient_rc" | ... }</code>. Always responds <code>200</code> — the caller appends the result to the redirect URL either way.</p>
       </div>
 
       <!-- ── EMANCIPATE ──────────────────────────────────────── -->

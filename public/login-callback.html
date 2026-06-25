@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Signing in — Snapie</title>
+  <link rel="stylesheet" href="/style.css" />
+  <style>
+    .hero { padding: 160px 0; text-align: center; color: var(--text-2); }
+  </style>
+</head>
+<body>
+  <div class="hero">
+    <div class="container">
+      <p id="status-text">Completing sign-in...</p>
+    </div>
+  </div>
+
+  <script type="module">
+    import { api, completeLicenseActivation, redirectWithLicenseResult } from '/auth.js'
+
+    const PENDING_KEY = 'snapie_license_pending'
+
+    function readPending() {
+      try { return JSON.parse(sessionStorage.getItem(PENDING_KEY) || 'null') } catch { return null }
+    }
+
+    async function init() {
+      const statusText = document.getElementById('status-text')
+      const pending = readPending()
+
+      // This page only ever expects to be reached via the /login plugin-licensing
+      // flow. If there's no pending request, something went wrong upstream —
+      // fail safe to the normal dashboard rather than stranding the user.
+      if (!pending) {
+        window.location.href = '/manage.html'
+        return
+      }
+
+      const hash = window.location.hash
+      const idToken = hash.includes('id_token=')
+        ? new URLSearchParams(hash.slice(1)).get('id_token')
+        : null
+
+      if (!idToken) {
+        statusText.textContent = 'Sign-in failed.'
+        redirectWithLicenseResult(pending, { status: 'error', error: 'google_signin_failed' })
+        return
+      }
+
+      window.history.replaceState({}, '', '/login-callback.html')
+
+      try {
+        await api('POST', '/auth/google', { credential: idToken })
+      } catch {
+        statusText.textContent = 'Sign-in failed.'
+        redirectWithLicenseResult(pending, { status: 'error', error: 'google_signin_failed' })
+        return
+      }
+
+      statusText.textContent = 'Activating your license...'
+      await completeLicenseActivation(pending)
+    }
+
+    init()
+  </script>
+</body>
+</html>

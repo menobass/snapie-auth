@@ -175,6 +175,7 @@ See `.env.example` for the full list. Key variables:
 | `AUTH_BASE_URL` | Public base URL, used in email links (e.g. `https://auth.snapie.io`) |
 | `ADMIN_EMAILS` | Comma-separated emails auto-granted admin on login (bootstrap — see [Admin](#admin)) |
 | `INTERNAL_API_KEY` | Bearer token for `/api/internal/*` endpoints |
+| `LICENSE_REDIRECT_HOSTS` | Comma-separated hostnames allowed as the `/login` redirect target for plugin licensing (default: `licensing.menosoft.xyz`) |
 
 Generate secrets:
 ```bash

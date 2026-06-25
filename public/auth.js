@@ -58,6 +58,32 @@ export function showAlert(container, message, type = 'info') {
   container.prepend(div)
 }
 
+// Shared by login.html and login-callback.html — navigates the browser to
+// the plugin's redirect URL with the activation result appended.
+export function redirectWithLicenseResult({ redirect, plugin, machine }, result) {
+  const url = new URL(redirect)
+  url.searchParams.set('plugin', plugin)
+  url.searchParams.set('machine', machine)
+  url.searchParams.set('status', result.status || 'error')
+  if (result.hiveUser) url.searchParams.set('hive_user', result.hiveUser)
+  if (result.error) url.searchParams.set('error', result.error)
+
+  sessionStorage.removeItem('snapie_license_pending')
+  window.location.href = url.toString()
+}
+
+// Calls the license activation endpoint (requires an active session) and
+// redirects with the result. Used once sign-in has succeeded.
+export async function completeLicenseActivation(pending) {
+  let result
+  try {
+    result = await api('POST', '/license/activate', { plugin: pending.plugin, machine: pending.machine })
+  } catch (err) {
+    result = { status: 'error', error: err.data?.error || 'request_failed' }
+  }
+  redirectWithLicenseResult(pending, result)
+}
+
 export function setLoading(btn, loading) {
   if (loading) {
     btn.dataset.originalText = btn.innerHTML
