@@ -163,6 +163,9 @@ router.post('/email/register', asyncMw(async (req, res) => {
       await sendVerificationEmail(email, token)
       return res.status(202).json({ pending: true })
     }
+    if (!existing.hiveUsername) {
+      return res.status(409).json({ error: 'login_to_claim_hive' })
+    }
     return res.status(409).json({ error: 'email_already_registered' })
   }
 
