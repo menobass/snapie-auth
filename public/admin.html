@@ -255,6 +255,10 @@
           <div class="stat-label">Free Slots Today</div>
           <div class="stat-value" id="stat-slots">—</div>
         </div>
+        <div class="stat-tile">
+          <div class="stat-label">Incomplete Onboarding</div>
+          <div class="stat-value" id="stat-incomplete">—</div>
+        </div>
       </div>
 
       <!-- Main tabs -->
@@ -262,6 +266,7 @@
         <button class="tab active" data-tab="sponsorships">Sponsorships</button>
         <button class="tab" data-tab="admins">Admins</button>
         <button class="tab" data-tab="system">System</button>
+        <button class="tab" data-tab="onboarding">Onboarding <span class="badge badge-gray" id="incomplete-tab-count" style="margin-left:4px">—</span></button>
       </div>
 
       <!-- ── TAB: Sponsorships ───────────────────────────────────── -->
@@ -413,6 +418,33 @@
 
       </div><!-- /system-panel -->
 
+      <!-- ── TAB: Onboarding ───────────────────────────────────────── -->
+      <div id="onboarding-panel" class="tab-panel">
+
+        <div class="card">
+          <div class="card-title">
+            Registered — No Hive Account
+            <span class="badge badge-gray" id="incomplete-count">0</span>
+            <button class="btn btn-ghost btn-sm" id="refresh-incomplete-btn" style="margin-left:auto">Refresh</button>
+          </div>
+          <p class="text-sm text-muted" style="margin-bottom:20px">Users who signed in but never completed Hive account creation. Sorted oldest first.</p>
+          <div style="overflow-x:auto">
+            <table class="data-table" id="incomplete-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Provider</th>
+                  <th>Signed Up</th>
+                  <th>Days Stuck</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+      </div><!-- /onboarding-panel -->
+
     </div>
   </div>
 
@@ -474,7 +506,7 @@
     }
 
     async function loadAll() {
-      await Promise.all([loadStats(), loadTokens(), loadAdmins(), loadJobs()])
+      await Promise.all([loadStats(), loadTokens(), loadAdmins(), loadJobs(), loadIncomplete()])
     }
 
     // ── Stats ────────────────────────────────────────────────────
@@ -494,6 +526,11 @@
         jobsEl.className = 'stat-value ' + (stats.pendingJobs > 5 ? 'warn' : '')
 
         document.getElementById('stat-users').textContent = stats.userCount
+
+        const incEl = document.getElementById('stat-incomplete')
+        incEl.textContent = stats.incompleteOnboarding ?? '—'
+        incEl.className = 'stat-value ' + (stats.incompleteOnboarding > 0 ? 'warn' : '')
+        document.getElementById('incomplete-tab-count').textContent = stats.incompleteOnboarding ?? '—'
 
         const slotsEl = document.getElementById('stat-slots')
         slotsEl.textContent = `${quota.remaining}/${quota.total}`
@@ -720,6 +757,43 @@
     }
 
     document.getElementById('refresh-jobs-btn').addEventListener('click', loadJobs)
+
+    // ── Incomplete onboarding ────────────────────────────────────
+    async function loadIncomplete() {
+      try {
+        const { users, count } = await api('GET', '/admin/incomplete-onboarding')
+        document.getElementById('incomplete-count').textContent = count
+        document.getElementById('incomplete-tab-count').textContent = count
+        const incEl = document.getElementById('stat-incomplete')
+        incEl.textContent = count
+        incEl.className = 'stat-value ' + (count > 0 ? 'warn' : '')
+        renderIncomplete(users)
+      } catch (e) {
+        console.error('Incomplete onboarding load failed', e)
+      }
+    }
+
+    function renderIncomplete(list) {
+      const tbody = document.querySelector('#incomplete-table tbody')
+      if (!list.length) {
+        tbody.innerHTML = emptyRow(4, 'No incomplete accounts — everyone has a Hive account')
+        return
+      }
+      const now = Date.now()
+      tbody.innerHTML = list.map(u => {
+        const days = Math.floor((now - new Date(u.createdAt).getTime()) / 86400000)
+        return `
+          <tr>
+            <td class="col-em">${u.name || '<em class="col-dim">No name</em>'}</td>
+            <td><span class="badge badge-gray">${u.provider}</span></td>
+            <td class="col-dim">${fmtDate(u.createdAt)}</td>
+            <td class="col-dim">${days === 0 ? 'Today' : days === 1 ? '1 day' : `${days} days`}</td>
+          </tr>
+        `
+      }).join('')
+    }
+
+    document.getElementById('refresh-incomplete-btn').addEventListener('click', loadIncomplete)
 
     // ── Claim ACT ────────────────────────────────────────────────
     document.getElementById('claim-act-btn').addEventListener('click', async () => {

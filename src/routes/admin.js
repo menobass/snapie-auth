@@ -17,16 +17,38 @@ function requireAdmin(req, res, next) {
 
 // GET /api/admin/stats
 router.get('/stats', authMiddleware, requireAdmin, asyncMw(async (req, res) => {
-  const [snapieAccount, pendingJobs, userCount] = await Promise.all([
+  const [snapieAccount, pendingJobs, userCount, incompleteOnboarding] = await Promise.all([
     getAccount(process.env.SNAPIE_ACCOUNT),
     accountJobs().countDocuments({ status: 'pending' }),
-    users().countDocuments()
+    users().countDocuments(),
+    users().countDocuments({ hiveUsername: null, emailVerified: true })
   ])
 
   res.json({
     actCount: snapieAccount?.pending_claimed_accounts || 0,
     pendingJobs,
-    userCount
+    userCount,
+    incompleteOnboarding
+  })
+}))
+
+// GET /api/admin/incomplete-onboarding
+router.get('/incomplete-onboarding', authMiddleware, requireAdmin, asyncMw(async (req, res) => {
+  const list = await users()
+    .find({ hiveUsername: null, emailVerified: true })
+    .sort({ createdAt: 1 })
+    .limit(200)
+    .project({ _id: 1, provider: 1, name: 1, createdAt: 1 })
+    .toArray()
+
+  res.json({
+    count: list.length,
+    users: list.map(u => ({
+      userId: u._id.toString(),
+      provider: u.provider,
+      name: u.name || null,
+      createdAt: u.createdAt
+    }))
   })
 }))
 
