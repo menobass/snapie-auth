@@ -194,6 +194,34 @@ router.post('/delegate', authMiddleware, csrfMiddleware, asyncMw(async (req, res
   ))
 }))
 
+// POST /api/hive/witness-vote
+router.post('/witness-vote', authMiddleware, csrfMiddleware, asyncMw(async (req, res) => {
+  const { witness, approve } = req.body
+  if (!witness || typeof witness !== 'string' || witness.length < 3 || witness.length > 16) {
+    return res.status(400).json({ error: 'invalid_witness' })
+  }
+  if (typeof approve !== 'boolean') {
+    return res.status(400).json({ error: 'invalid_approve' })
+  }
+  await activeOp(req, res, 'account_witness_vote', (account) => (
+    ['account_witness_vote', { account, witness, approve }]
+  ))
+}))
+
+// POST /api/hive/proposal-vote
+router.post('/proposal-vote', authMiddleware, csrfMiddleware, asyncMw(async (req, res) => {
+  const { proposalIds, approve } = req.body
+  if (!Array.isArray(proposalIds) || proposalIds.length === 0 || !proposalIds.every(id => Number.isInteger(id) && id >= 0)) {
+    return res.status(400).json({ error: 'invalid_proposal_ids' })
+  }
+  if (typeof approve !== 'boolean') {
+    return res.status(400).json({ error: 'invalid_approve' })
+  }
+  await activeOp(req, res, 'update_proposal_votes', (voter) => (
+    ['update_proposal_votes', { voter, proposal_ids: proposalIds, approve, extensions: [] }]
+  ))
+}))
+
 // POST /api/hive/limit-order-create
 // Places a limit order on the internal HIVE/HBD market.
 // sell: what you give up; receive: minimum you'll accept.
