@@ -52,7 +52,24 @@ app.use(helmet({
       styleSrc: ["'self'", "'unsafe-inline'", 'fonts.googleapis.com'],
       fontSrc: ["'self'", 'fonts.gstatic.com'],
       imgSrc: ["'self'", 'data:', 'https:'],
-      connectSrc: ["'self'", 'https://accounts.google.com', 'https://oauth2.googleapis.com']
+      connectSrc: [
+        "'self'",
+        'https://accounts.google.com',
+        'https://oauth2.googleapis.com',
+        // Manual Hive account-link path (public/manage.html): signs and
+        // broadcasts account_update2 directly from the browser, plus a
+        // health-check lookup against PeakD's node beacon. Keep this list
+        // in sync with HIVE_NODE_ALLOWLIST in manage.html.
+        'https://beacon.peakd.com',
+        'https://api.hive.blog',
+        'https://api.deathwing.me',
+        'https://api.openhive.network',
+        'https://techcoderx.com',
+        'https://api.syncad.com',
+        'https://hiveapi.actifit.io',
+        'https://api.c0ff33a.uk',
+        'https://rpc.mahdiyari.info'
+      ]
     }
   }
 }))

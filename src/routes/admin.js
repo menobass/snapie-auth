@@ -15,20 +15,47 @@ function requireAdmin(req, res, next) {
   next()
 }
 
+// Custodial accounts younger than the emancipation hold — the abuse-review queue.
+function heldAccountsFilter() {
+  const minDays = parseFloat(process.env.EMANCIPATION_MIN_AGE_DAYS || '30')
+  const cutoff = new Date(Date.now() - minDays * 86400000)
+  return { custodyMode: 'custodial', createdAt: { $gte: cutoff } }
+}
+
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function shapeAdminUser(u) {
+  return {
+    userId: u._id.toString(),
+    hiveUsername: u.hiveUsername || null,
+    name: u.name || null,
+    provider: u.provider,
+    custodyMode: u.custodyMode || null,
+    createdAt: u.createdAt,
+    disabled: u.disabled || false,
+    disabledReason: u.disabledReason || null,
+    disabledAt: u.disabledAt || null
+  }
+}
+
 // GET /api/admin/stats
 router.get('/stats', authMiddleware, requireAdmin, asyncMw(async (req, res) => {
-  const [snapieAccount, pendingJobs, userCount, incompleteOnboarding] = await Promise.all([
+  const [snapieAccount, pendingJobs, userCount, incompleteOnboarding, heldAccounts] = await Promise.all([
     getAccount(process.env.SNAPIE_ACCOUNT),
     accountJobs().countDocuments({ status: 'pending' }),
     users().countDocuments(),
-    users().countDocuments({ hiveUsername: null, emailVerified: true })
+    users().countDocuments({ hiveUsername: null, emailVerified: true }),
+    users().countDocuments(heldAccountsFilter())
   ])
 
   res.json({
     actCount: snapieAccount?.pending_claimed_accounts || 0,
     pendingJobs,
     userCount,
-    incompleteOnboarding
+    incompleteOnboarding,
+    heldAccounts
   })
 }))
 
@@ -174,6 +201,82 @@ router.delete('/sponsor-tokens/:tokenId', authMiddleware, requireAdmin, csrfMidd
     return res.status(404).json({ error: 'token not found or already used' })
   }
   res.json({ ok: true })
+}))
+
+// ── Account search / disable (abuse review) ─────────────────────
+
+// GET /api/admin/users?q=<term> — search by hiveUsername (prefix) or name
+router.get('/users', authMiddleware, requireAdmin, asyncMw(async (req, res) => {
+  const q = (req.query.q || '').toString().trim()
+  if (!q) return res.json({ users: [] })
+
+  const pattern = new RegExp('^' + escapeRegex(q), 'i')
+  const list = await users()
+    .find({ $or: [{ hiveUsername: pattern }, { name: pattern }] })
+    .limit(25)
+    .toArray()
+
+  res.json({ users: list.map(shapeAdminUser) })
+}))
+
+// GET /api/admin/held-accounts — custodial accounts still inside the emancipation hold window
+router.get('/held-accounts', authMiddleware, requireAdmin, asyncMw(async (req, res) => {
+  const minDays = parseFloat(process.env.EMANCIPATION_MIN_AGE_DAYS || '30')
+  const list = await users()
+    .find(heldAccountsFilter())
+    .sort({ createdAt: -1 })
+    .limit(200)
+    .toArray()
+
+  res.json({
+    minAgeDays: minDays,
+    users: list.map(u => ({
+      ...shapeAdminUser(u),
+      eligibleAt: new Date(new Date(u.createdAt).getTime() + minDays * 86400000)
+    }))
+  })
+}))
+
+// POST /api/admin/users/:userId/disable — body: { reason }
+router.post('/users/:userId/disable', authMiddleware, requireAdmin, csrfMiddleware, asyncMw(async (req, res) => {
+  const oid = toOid(req.params.userId)
+  if (!oid) return res.status(400).json({ error: 'invalid_user_id' })
+
+  const { reason } = req.body
+  if (!reason || typeof reason !== 'string' || !reason.trim() || reason.length > 500) {
+    return res.status(400).json({ error: 'reason required (1-500 chars)' })
+  }
+
+  const result = await users().findOneAndUpdate(
+    { _id: oid },
+    {
+      $set: {
+        disabled: true,
+        disabledReason: reason.trim(),
+        disabledAt: new Date(),
+        disabledBy: req.user.userId
+      }
+    },
+    { returnDocument: 'after' }
+  )
+  if (!result) return res.status(404).json({ error: 'user_not_found' })
+
+  res.json(shapeAdminUser(result))
+}))
+
+// POST /api/admin/users/:userId/enable
+router.post('/users/:userId/enable', authMiddleware, requireAdmin, csrfMiddleware, asyncMw(async (req, res) => {
+  const oid = toOid(req.params.userId)
+  if (!oid) return res.status(400).json({ error: 'invalid_user_id' })
+
+  const result = await users().findOneAndUpdate(
+    { _id: oid },
+    { $set: { disabled: false, disabledReason: null, disabledAt: null, disabledBy: null } },
+    { returnDocument: 'after' }
+  )
+  if (!result) return res.status(404).json({ error: 'user_not_found' })
+
+  res.json(shapeAdminUser(result))
 }))
 
 // ── Admin user management ──────────────────────────────────────

@@ -47,12 +47,20 @@ function getCustodialActiveKey(user) {
   return decryptKey(user.encryptedKeys.active, serverKey)
 }
 
+// Admin-disabled accounts can still log in, but every transact path is blocked.
+function rejectIfDisabled(user, res) {
+  if (!user.disabled) return false
+  res.status(403).json({ error: 'account_disabled', reason: user.disabledReason || null })
+  return true
+}
+
 // POST /api/hive/broadcast — posting-level ops, all users
 router.post('/broadcast', authMiddleware, csrfMiddleware, asyncMw(async (req, res) => {
   const user = await getUserById(req.user.userId)
   if (!user || !user.hiveUsername) {
     return res.status(403).json({ error: 'no_hive_account' })
   }
+  if (rejectIfDisabled(user, res)) return
 
   const { op } = req.body
   if (!Array.isArray(op) || op.length !== 2 || typeof op[0] !== 'string') {
@@ -95,6 +103,7 @@ async function activeOp(req, res, opType, buildOp) {
   if (!user || !user.hiveUsername) {
     return res.status(403).json({ error: 'no_hive_account' })
   }
+  if (rejectIfDisabled(user, res)) return
 
   let op
   try {
@@ -371,6 +380,7 @@ router.post('/claim-rewards', authMiddleware, csrfMiddleware, asyncMw(async (req
   if (!user || !user.hiveUsername) {
     return res.status(403).json({ error: 'no_hive_account' })
   }
+  if (rejectIfDisabled(user, res)) return
 
   const account = await getAccount(user.hiveUsername)
   if (!account) return res.status(404).json({ error: 'account_not_found' })
@@ -406,6 +416,7 @@ router.post('/sign-message', authMiddleware, csrfMiddleware, asyncMw(async (req,
   if (!user || !user.hiveUsername) {
     return res.status(403).json({ error: 'no_hive_account' })
   }
+  if (rejectIfDisabled(user, res)) return
 
   const { message } = req.body
   if (!message || typeof message !== 'string') {

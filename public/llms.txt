@@ -1,5 +1,5 @@
 # Snapie Auth — LLM Integration Reference
-# Version: 1.6 | Updated: 2026-06-13
+# Version: 1.7 | Updated: 2026-07-29
 # Support: https://discord.gg/CgJP7t7nWy
 # Base URL: https://auth.snapie.io/api
 
@@ -40,8 +40,21 @@ Issued by admins via /admin.html or the Admin API, or by external apps
 via the Internal API.
 
 EMANCIPATION THRESHOLD: Configurable USD value. When a custodial account
-exceeds this value, the user must export their keys before continuing.
-Set EMANCIPATION_THRESHOLD_USD=0 to disable.
+exceeds this value, GET /emancipate/status and GET /auth/me report
+emancipationRequired: true as a UI nudge — this is informational only and
+does not block any action server-side. Set EMANCIPATION_THRESHOLD_USD=0
+to disable.
+
+EMANCIPATION HOLD: Abuse-prevention measure. Custodial accounts cannot
+emancipate until EMANCIPATION_MIN_AGE_DAYS (default 30) has passed since
+creation — POST /emancipate/start returns 403 account_too_new with an
+eligibleAt timestamp until then. Unlike the threshold above, this DOES
+block the request. Check ageGateMet / eligibleAt from GET /emancipate/status.
+
+ACCOUNT DISABLE: Admins can disable an account for abuse via the Admin API
+(POST /admin/users/:userId/disable). The user can still log in, but every
+transacting endpoint (/hive/*, /emancipate/start) returns 403 account_disabled
+with an optional reason field. Check user.disabled / user.disabledReason.
 
 FREE ACCOUNT QUOTA: By default 10 accounts/day globally and 2/IP/day.
 Check remaining slots with GET /quota (public, no auth). Sponsor tokens
@@ -197,19 +210,21 @@ in the response body — no separate GET /auth/me call needed after login:
 
 ```
 {
-  id:           string   — MongoDB ObjectId as hex string
-  name:         string|null
-  picture:      string|null  — URL (Google accounts only)
-  hiveUsername: string|null  — null until account is created
-  custodyMode:  "custodial"|"emancipated"|null
-  isAdmin:      boolean
+  id:             string   — MongoDB ObjectId as hex string
+  name:           string|null
+  picture:        string|null  — URL (Google accounts only)
+  hiveUsername:   string|null  — null until account is created
+  custodyMode:    "custodial"|"emancipated"|null
+  isAdmin:        boolean
+  disabled:       boolean      — true if an admin disabled this account for abuse
+  disabledReason: string|null  — set only when disabled is true
 }
 ```
 
 GET /auth/me returns the same shape plus:
   email:                string|null  — from session JWT (cosmetic, not stored)
   accountValueUsd:      number|null  — only present when hiveUsername + custodial
-  emancipationRequired: boolean      — only present when above applies
+  emancipationRequired: boolean      — only present when above applies (informational, see EMANCIPATION THRESHOLD)
 
 Note: after a fresh login, hiveUsername is null until the user creates a Hive
 account via POST /account/create. Always check hiveUsername before using it.
@@ -262,9 +277,10 @@ POST /hive/convert                → custodial: { txId }  emancipated: { needsC
 POST /hive/collateralized-convert → custodial: { txId }  emancipated: { needsClientSigning: true, unsignedOp, account, keyType: "active" }  [CSRF]
 POST /hive/claim-rewards          → { txId }  (posting-level; always proxied)  [CSRF]
 
-GET  /emancipate/status         → { custodyMode, totalUsd, thresholdUsd }
+GET  /emancipate/status         → { custodyMode, accountValueUsd, threshold, forcedEmancipation, minAgeDays, eligibleAt, ageGateMet }
 POST /emancipate/start          → { keys: { owner, active, posting, memo }, masterPassword } [CSRF]
                                     masterPassword: single secret all keys derive from (Hive fromLogin); null for pre-master-password accounts
+                                    403 account_too_new (+ eligibleAt) if ageGateMet is false; 403 account_disabled if the account was disabled
 
 ### Internal (Bearer token)
 POST /internal/provision-account      → { jobId, userId }
@@ -272,7 +288,7 @@ GET  /internal/jobs/:jobId            → { status, ...keys? }
 POST /internal/issue-sponsor-token    → { tokenId, email, expiresAt }
 
 ### Admin (session + isAdmin required)
-GET  /admin/stats               → { actCount, pendingJobs, userCount }
+GET  /admin/stats               → { actCount, pendingJobs, userCount, incompleteOnboarding, heldAccounts }
 GET  /admin/jobs                → { jobs: [...] }
 POST /admin/claim-act           → { ok, txId }           [CSRF]
 
@@ -287,6 +303,14 @@ POST /admin/admins              → { userId, name, provider }  [CSRF]
   Body: { email } — user must already be registered
 DELETE /admin/admins/:userId    → { ok: true }           [CSRF]
   Cannot demote yourself.
+
+GET  /admin/users?q=            → { users: [{ userId, hiveUsername, name, provider, custodyMode, createdAt, disabled, disabledReason, disabledAt }] }
+  Search by Hive username (prefix) or name, case-insensitive, up to 25 results.
+GET  /admin/held-accounts       → { minAgeDays, users: [{ ...same shape, eligibleAt }] }
+  Custodial accounts still inside the emancipation hold window — abuse-review queue.
+POST /admin/users/:userId/disable → { userId, disabled: true, disabledReason, disabledAt }  [CSRF]
+  Body: { reason } — required, 1-500 chars. User can still log in; all transacting blocked.
+POST /admin/users/:userId/enable  → { userId, disabled: false, disabledReason: null, disabledAt: null }  [CSRF]
 
 ## Error Format
 
@@ -306,6 +330,10 @@ Common codes:
                               For posting ops: the Snapie service account is out of RC (operator issue)
                               For active ops: the user's own account is out of RC
   emancipation_required     — account value exceeded threshold; user must export keys
+  account_too_new           — HTTP 403; custodial account hasn't reached EMANCIPATION_MIN_AGE_DAYS yet
+                              (response includes eligibleAt); blocks POST /emancipate/start
+  account_disabled          — HTTP 403; admin disabled this account for abuse
+                              (response includes reason if given); blocks all /hive/* and /emancipate/start
   not_custodial             — action requires custodial mode
   user_not_found            — no account with that email (admin: grant admin)
   cannot_demote_self        — admin tried to revoke their own admin access
@@ -372,6 +400,10 @@ Response pattern:
 
 emancipationRequired is also returned by GET /auth/me and GET /account/value.
 Check it on page load so you can show a persistent banner without waiting for a transaction.
+
+All /hive/* endpoints (and /emancipate/start) return 403 account_disabled if an
+admin has disabled the account for abuse. Check user.disabled from GET /auth/me
+on page load to show this state proactively rather than waiting for a 403.
 
 ### POST /hive/transfer
 ```json

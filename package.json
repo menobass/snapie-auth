@@ -5,7 +5,8 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "test": "vitest run"
+    "test": "vitest run",
+    "postinstall": "cp node_modules/@hiveio/dhive/dist/dhive.js public/vendor/dhive.js"
   },
   "dependencies": {
     "@hiveio/dhive": "^1.3.1",

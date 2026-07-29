@@ -6,7 +6,8 @@ Hive account gateway and signing proxy for [Snapie](https://snapie.io).
 - Custodial Hive account creation using pre-claimed account tokens (ACTs)
 - Server-side key custody — no wallet required for new users
 - Posting-level and active-level signing proxy
-- Voluntary key export (emancipation)
+- Voluntary key export (emancipation), gated behind a minimum account age to curb faucet abuse
+- Admin-triggered account disable — blocks all transacting while allowing login, for abuse review
 - Sponsor token system for gifting free accounts (email invites, even pre-registration)
 - Daily free-account quota with public `/api/quota` endpoint for consuming apps
 - HIVE + Bitcoin Lightning (v4v.app) payments for paid account creation — no KYC
@@ -158,7 +159,8 @@ See `.env.example` for the full list. Key variables:
 | `SNAPIE_ACTIVE_KEY` | Active private key for `create_claimed_account` |
 | `SNAPIE_POSTING_KEY` | Posting private key for signing proxy + RC delegation |
 | `KEY_ENCRYPTION_PEPPER` | 32-byte hex secret for custodial key encryption — **never change after first deploy** |
-| `EMANCIPATION_THRESHOLD_USD` | Force key export above this account value (0 to disable) |
+| `EMANCIPATION_THRESHOLD_USD` | Surface a UI nudge to export keys above this account value (0 to disable) — informational only, does not block anything |
+| `EMANCIPATION_MIN_AGE_DAYS` | Minimum custodial account age, in days, before emancipation is allowed (default: 30) — abuse-prevention hold, actually enforced server-side |
 | `RC_DELEGATION_BN` | RC delegated to new accounts in billions (default: 5) |
 | `FREE_ACCOUNTS_PER_IP_PER_DAY` | Max free account creations per IP per day (default: 2) |
 | `FREE_ACCOUNTS_GLOBAL_PER_DAY` | Max free account creations globally per day (default: 10) |
@@ -265,6 +267,10 @@ Active-level ops (everything except `broadcast`, `claim-rewards`, and `sign-mess
 | GET | `/api/admin/admins` | List admin users |
 | POST | `/api/admin/admins` | Grant admin by email |
 | DELETE | `/api/admin/admins/:userId` | Revoke admin |
+| GET | `/api/admin/users?q=` | Search accounts by Hive username or name |
+| GET | `/api/admin/held-accounts` | Custodial accounts still inside the emancipation hold window |
+| POST | `/api/admin/users/:userId/disable` | Disable an account for abuse (blocks all transacting, login still works) |
+| POST | `/api/admin/users/:userId/enable` | Re-enable a disabled account |
 
 ### Internal (Bearer token)
 | Method | Path | Description |
@@ -291,6 +297,8 @@ ADMIN_EMAILS=you@example.com,colleague@example.com
 - **Sponsorships tab** — issue invite tokens to any email (registered or not), optionally send an invite email, view/revoke pending invites, see used invites
 - **Admins tab** — grant or revoke admin access by email
 - **System tab** — claim ACTs, view recent account creation jobs
+- **Onboarding tab** — users who signed in but never completed Hive account creation
+- **Accounts tab** — search any account, review the queue of custodial accounts still inside the emancipation hold window, and disable/re-enable accounts for abuse
 
 ---
 
@@ -311,12 +319,21 @@ When Alice registers with that email and creates an account, the token is consum
 
 ## Emancipation
 
-Custodial users can export their private keys — and the master password those keys derive from — at any time via `POST /api/emancipate/start`. Snapie deletes its copy immediately. The master password can be imported into any Hive wallet (Keychain, PeakD) to regenerate all four keys. (`masterPassword` is `null` for accounts created before master-password support; their four keys are still returned.) Once emancipated:
+Custodial users can export their private keys — and the master password those keys derive from — via `POST /api/emancipate/start`, once the account has existed for at least `EMANCIPATION_MIN_AGE_DAYS` (default 30 — see [Abuse Prevention](#abuse-prevention) below). Snapie deletes its copy immediately. The master password can be imported into any Hive wallet (Keychain, PeakD) to regenerate all four keys. (`masterPassword` is `null` for accounts created before master-password support; their four keys are still returned.) Once emancipated:
 
 - Posting-level ops (vote, comment, custom_json) are still proxied via Snapie's posting authority
 - Active-level ops (transfer, power-up, etc.) return `{ needsClientSigning: true, unsignedOp, account, keyType: "active" }` for the consuming app to hand off to Aioha or Keychain
 
-If `EMANCIPATION_THRESHOLD_USD` is set, users whose account value exceeds the threshold are blocked from posting until they emancipate.
+If `EMANCIPATION_THRESHOLD_USD` is set, users whose account value exceeds the threshold get `emancipationRequired: true` back from `GET /auth/me` / `GET /emancipate/status` as a UI nudge to export their keys — this is informational only and does not block anything server-side.
+
+---
+
+## Abuse Prevention
+
+Two independent controls curb faucet abuse (someone creating a free custodial account and immediately emancipating with it, e.g. for spam):
+
+- **Emancipation hold** — `POST /api/emancipate/start` rejects with `403 account_too_new` until the account is at least `EMANCIPATION_MIN_AGE_DAYS` old (default 30). This is enforced server-side, unlike the value-based threshold above. `GET /api/emancipate/status` exposes `minAgeDays`, `eligibleAt`, and `ageGateMet` so the frontend can show a countdown instead of a raw error.
+- **Admin disable** — from the **Accounts** tab in `/admin.html`, an admin can disable any account with a reason. The user can still log in, but every transacting endpoint (`/api/hive/*`, `/api/emancipate/start`) returns `403 account_disabled` with the reason. The same tab surfaces a proactive review queue of custodial accounts still inside the hold window (`GET /api/admin/held-accounts`), so abuse can be caught before the hold expires.
 
 ---
 

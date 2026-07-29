@@ -39,6 +39,10 @@ export async function upsertUser({ provider, providerId, emailHash, name, pictur
         emancipatedAt: null,
         emancipationForcedAt: null,
         isAdmin: false,
+        disabled: false,
+        disabledReason: null,
+        disabledAt: null,
+        disabledBy: null,
         createdAt: now
       }
     },
@@ -68,6 +72,8 @@ export function shapeUser(user, extra = {}) {
     hiveUsername: user.hiveUsername || null,
     custodyMode: user.custodyMode || null,
     isAdmin: user.isAdmin || false,
+    disabled: user.disabled || false,
+    disabledReason: user.disabledReason || null,
     ...extra
   }
 }

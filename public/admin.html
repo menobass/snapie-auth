@@ -259,6 +259,10 @@
           <div class="stat-label">Incomplete Onboarding</div>
           <div class="stat-value" id="stat-incomplete">—</div>
         </div>
+        <div class="stat-tile">
+          <div class="stat-label">In Hold Window</div>
+          <div class="stat-value" id="stat-held">—</div>
+        </div>
       </div>
 
       <!-- Main tabs -->
@@ -267,6 +271,7 @@
         <button class="tab" data-tab="admins">Admins</button>
         <button class="tab" data-tab="system">System</button>
         <button class="tab" data-tab="onboarding">Onboarding <span class="badge badge-gray" id="incomplete-tab-count" style="margin-left:4px">—</span></button>
+        <button class="tab" data-tab="accounts">Accounts <span class="badge badge-gray" id="accounts-tab-count" style="margin-left:4px">—</span></button>
       </div>
 
       <!-- ── TAB: Sponsorships ───────────────────────────────────── -->
@@ -445,6 +450,64 @@
 
       </div><!-- /onboarding-panel -->
 
+      <!-- ── TAB: Accounts ────────────────────────────────────────── -->
+      <div id="accounts-panel" class="tab-panel">
+
+        <!-- Search -->
+        <div class="card mb-4">
+          <div class="card-title">Find Account</div>
+          <p class="text-sm text-muted" style="margin-bottom:14px">Search by Hive username or display name.</p>
+          <div style="display:flex;gap:12px;align-items:flex-end;margin-bottom:14px">
+            <div class="form-group" style="flex:1;margin-bottom:0">
+              <label>Username or Name</label>
+              <input type="text" id="account-search-input" placeholder="e.g. alice" autocomplete="off" />
+            </div>
+            <button class="btn btn-primary" id="account-search-btn">Search</button>
+          </div>
+          <div style="overflow-x:auto">
+            <table class="data-table" id="account-search-table">
+              <thead>
+                <tr>
+                  <th>Hive Username</th>
+                  <th>Name</th>
+                  <th>Custody</th>
+                  <th>Created</th>
+                  <th>Status</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Hold window -->
+        <div class="card">
+          <div class="card-title">
+            Accounts In Hold Window
+            <span class="badge badge-gray" id="held-count">0</span>
+            <button class="btn btn-ghost btn-sm" id="refresh-held-btn" style="margin-left:auto">Refresh</button>
+          </div>
+          <p class="text-sm text-muted" style="margin-bottom:20px">Custodial accounts too new to emancipate yet. Review for abuse before the hold expires.</p>
+          <div style="overflow-x:auto">
+            <table class="data-table" id="held-table">
+              <thead>
+                <tr>
+                  <th>Hive Username</th>
+                  <th>Name</th>
+                  <th>Created</th>
+                  <th>Days Left</th>
+                  <th>Status</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+      </div><!-- /accounts-panel -->
+
     </div>
   </div>
 
@@ -506,7 +569,7 @@
     }
 
     async function loadAll() {
-      await Promise.all([loadStats(), loadTokens(), loadAdmins(), loadJobs(), loadIncomplete()])
+      await Promise.all([loadStats(), loadTokens(), loadAdmins(), loadJobs(), loadIncomplete(), loadHeldAccounts()])
     }
 
     // ── Stats ────────────────────────────────────────────────────
@@ -535,6 +598,9 @@
         const slotsEl = document.getElementById('stat-slots')
         slotsEl.textContent = `${quota.remaining}/${quota.total}`
         slotsEl.className = 'stat-value ' + (quota.remaining === 0 ? 'warn' : 'ok')
+
+        document.getElementById('stat-held').textContent = stats.heldAccounts ?? '—'
+        document.getElementById('accounts-tab-count').textContent = stats.heldAccounts ?? '—'
       } catch (e) {
         console.error('Stats load failed', e)
       }
@@ -794,6 +860,121 @@
     }
 
     document.getElementById('refresh-incomplete-btn').addEventListener('click', loadIncomplete)
+
+    // ── Accounts (search + abuse hold review) ──────────────────────
+    function accountStatusBadge(u) {
+      return u.disabled
+        ? `<span class="badge badge-red" title="${u.disabledReason ? u.disabledReason.replace(/"/g, '&quot;') : ''}">Disabled</span>`
+        : '<span class="badge badge-green">Active</span>'
+    }
+
+    function accountActionCell(u, tr) {
+      const btn = document.createElement('button')
+      btn.className = 'btn btn-sm ' + (u.disabled ? 'btn-outline' : 'btn-danger')
+      btn.textContent = u.disabled ? 'Enable' : 'Disable'
+      btn.addEventListener('click', () => u.disabled ? enableAccount(u, tr) : disableAccount(u, tr))
+      return btn
+    }
+
+    async function disableAccount(u, tr) {
+      const reason = prompt(`Reason for disabling ${u.hiveUsername || u.name || u.userId}:`)
+      if (!reason || !reason.trim()) return
+      try {
+        const updated = await api('POST', `/admin/users/${u.userId}/disable`, { reason: reason.trim() })
+        Object.assign(u, updated)
+        renderAccountRow(tr, u, tr.dataset.rowType)
+      } catch (err) {
+        alert(err.data?.error || 'Failed to disable account.')
+      }
+    }
+
+    async function enableAccount(u, tr) {
+      if (!confirm(`Re-enable ${u.hiveUsername || u.name || u.userId}?`)) return
+      try {
+        const updated = await api('POST', `/admin/users/${u.userId}/enable`)
+        Object.assign(u, updated)
+        renderAccountRow(tr, u, tr.dataset.rowType)
+      } catch (err) {
+        alert(err.data?.error || 'Failed to enable account.')
+      }
+    }
+
+    function renderAccountRow(tr, u, rowType) {
+      tr.dataset.rowType = rowType
+      if (rowType === 'held') {
+        const daysLeft = Math.max(0, Math.ceil((new Date(u.eligibleAt).getTime() - Date.now()) / 86400000))
+        tr.innerHTML = `
+          <td class="col-em">${u.hiveUsername || '—'}</td>
+          <td>${u.name || '<em class="col-dim">No name</em>'}</td>
+          <td class="col-dim">${fmtDate(u.createdAt)}</td>
+          <td class="col-dim">${daysLeft === 0 ? 'Today' : daysLeft === 1 ? '1 day' : `${daysLeft} days`}</td>
+          <td>${accountStatusBadge(u)}</td>
+          <td></td>
+        `
+      } else {
+        tr.innerHTML = `
+          <td class="col-em">${u.hiveUsername || '<em class="col-dim">No Hive account</em>'}</td>
+          <td>${u.name || '<em class="col-dim">No name</em>'}</td>
+          <td><span class="badge badge-gray">${u.custodyMode || '—'}</span></td>
+          <td class="col-dim">${fmtDate(u.createdAt)}</td>
+          <td>${accountStatusBadge(u)}</td>
+          <td></td>
+        `
+      }
+      tr.lastElementChild.appendChild(accountActionCell(u, tr))
+    }
+
+    async function loadHeldAccounts() {
+      try {
+        const { users, minAgeDays } = await api('GET', '/admin/held-accounts')
+        document.getElementById('held-count').textContent = users.length
+        const tbody = document.querySelector('#held-table tbody')
+        if (!users.length) {
+          tbody.innerHTML = emptyRow(6, `No custodial accounts inside the ${minAgeDays}-day hold window`)
+          return
+        }
+        tbody.innerHTML = ''
+        for (const u of users) {
+          const tr = document.createElement('tr')
+          renderAccountRow(tr, u, 'held')
+          tbody.appendChild(tr)
+        }
+      } catch (e) {
+        console.error('Held accounts load failed', e)
+      }
+    }
+
+    document.getElementById('refresh-held-btn').addEventListener('click', loadHeldAccounts)
+
+    async function searchAccounts() {
+      const q = document.getElementById('account-search-input').value.trim()
+      const tbody = document.querySelector('#account-search-table tbody')
+      if (!q) {
+        tbody.innerHTML = emptyRow(6, 'Enter a username or name to search')
+        return
+      }
+      try {
+        const { users } = await api('GET', `/admin/users?q=${encodeURIComponent(q)}`)
+        if (!users.length) {
+          tbody.innerHTML = emptyRow(6, 'No matching accounts')
+          return
+        }
+        tbody.innerHTML = ''
+        for (const u of users) {
+          const tr = document.createElement('tr')
+          renderAccountRow(tr, u, 'search')
+          tbody.appendChild(tr)
+        }
+      } catch (e) {
+        console.error('Account search failed', e)
+        tbody.innerHTML = emptyRow(6, 'Search failed')
+      }
+    }
+
+    document.getElementById('account-search-btn').addEventListener('click', searchAccounts)
+    document.getElementById('account-search-input').addEventListener('keydown', e => {
+      if (e.key === 'Enter') searchAccounts()
+    })
 
     // ── Claim ACT ────────────────────────────────────────────────
     document.getElementById('claim-act-btn').addEventListener('click', async () => {

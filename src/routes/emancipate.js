@@ -10,6 +10,16 @@ import { users } from '../services/db.js'
 
 const router = Router()
 
+// Custodial accounts must exist for a minimum age before they can emancipate —
+// an abuse-prevention hold that gives admins time to review new faucet accounts
+// before the user can walk away with the keys. This takes priority over the
+// value-based forced-emancipation nudge below (which is informational only).
+function ageGate(createdAt) {
+  const minDays = parseFloat(process.env.EMANCIPATION_MIN_AGE_DAYS || '30')
+  const eligibleAt = new Date(new Date(createdAt).getTime() + minDays * 86400000)
+  return { minDays, eligibleAt, met: Date.now() >= eligibleAt.getTime() }
+}
+
 // GET /api/emancipate/status
 router.get('/status', authMiddleware, asyncMw(async (req, res) => {
   const user = await getUserById(req.user.userId)
@@ -27,12 +37,17 @@ router.get('/status', authMiddleware, asyncMw(async (req, res) => {
     }
   }
 
+  const gate = ageGate(user.createdAt)
+
   res.json({
     custodyMode: user.custodyMode,
     accountValueUsd,
     threshold,
     forcedEmancipation: isEmancipationRequired(user.custodyMode, accountValueUsd || 0),
-    hiveUsername: user.hiveUsername || null
+    hiveUsername: user.hiveUsername || null,
+    minAgeDays: gate.minDays,
+    eligibleAt: gate.eligibleAt,
+    ageGateMet: gate.met
   })
 }))
 
@@ -51,6 +66,14 @@ router.post('/start', authMiddleware, csrfMiddleware, asyncMw(async (req, res) =
   }
   if (!user.hiveUsername) {
     return res.status(400).json({ error: 'no_hive_account' })
+  }
+  if (user.disabled) {
+    return res.status(403).json({ error: 'account_disabled', reason: user.disabledReason || null })
+  }
+
+  const gate = ageGate(user.createdAt)
+  if (!gate.met) {
+    return res.status(403).json({ error: 'account_too_new', eligibleAt: gate.eligibleAt })
   }
 
   // Derive the server-side key — deterministic from pepper + userId

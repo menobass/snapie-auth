@@ -196,6 +196,7 @@
       <a href="#admin-claim-act">Claim ACT</a>
       <a href="#admin-tokens">Sponsor Tokens</a>
       <a href="#admin-admins">Admin Users</a>
+      <a href="#admin-accounts">Accounts (Abuse Review)</a>
     </aside>
 
     <main class="docs-main">
@@ -247,6 +248,8 @@
           <tr><td>invalid_username</td><td>400</td><td>Bad format or username already taken on-chain</td></tr>
           <tr><td>insufficient_rc</td><td>503</td><td>Insufficient Resource Credits. For posting ops: the Snapie service account is out of RC (operator issue). For active ops: the user's own account is low.</td></tr>
           <tr><td>emancipation_required</td><td>403</td><td>Account value exceeded threshold; user must export keys first</td></tr>
+          <tr><td>account_too_new</td><td>403</td><td>Custodial account hasn't reached the minimum age to emancipate yet (<code>EMANCIPATION_MIN_AGE_DAYS</code>, default 30). Response includes <code>eligibleAt</code>.</td></tr>
+          <tr><td>account_disabled</td><td>403</td><td>Account was disabled by an admin (abuse review). Login still works; all transacting is blocked. Response includes <code>reason</code> if one was given.</td></tr>
           <tr><td>not_custodial</td><td>400</td><td>Action requires custodial mode</td></tr>
           <tr><td>invalid_or_expired_challenge</td><td>400</td><td>Link challenge not found or expired (TTL 5 min)</td></tr>
           <tr><td>invalid_signature</td><td>401</td><td>Hive posting key signature did not verify</td></tr>
@@ -288,7 +291,8 @@
     "picture": "https://lh3.googleusercontent.com/...",
     "hiveUsername": null,
     "custodyMode": null,
-    "isAdmin": false
+    "isAdmin": false,
+    "disabled": false
   }
 }</pre>
         <p><code>hiveUsername</code> is <code>null</code> until the user creates or links a Hive account.</p>
@@ -317,7 +321,8 @@
     "picture": null,
     "hiveUsername": null,
     "custodyMode": null,
-    "isAdmin": false
+    "isAdmin": false,
+    "disabled": false
   }
 }</pre>
         <p><code>hiveUsername</code> is <code>null</code> until the user creates or links a Hive account.</p>
@@ -390,7 +395,8 @@ const { user } = await res.json()</pre>
     "picture": "https://lh3.googleusercontent.com/...",
     "hiveUsername": "alice",
     "custodyMode": "custodial",
-    "isAdmin": false
+    "isAdmin": false,
+    "disabled": false
   },
   "email": "alice@example.com",
   "accountValueUsd": 3.21,
@@ -754,9 +760,13 @@ aioha.signMessage(message, KeyTypes.Posting)</pre>
   "hiveUsername": "alice",
   "accountValueUsd": 3.40,
   "threshold": 10,
-  "forcedEmancipation": false
+  "forcedEmancipation": false,
+  "minAgeDays": 30,
+  "eligibleAt": "2026-08-15T00:00:00.000Z",
+  "ageGateMet": false
 }</pre>
-        <p><code>forcedEmancipation: true</code> means the user must export their keys before further actions are allowed.</p>
+        <p><code>forcedEmancipation: true</code> is informational only — it does not currently block any action, it's shown as a UI nudge to export keys.</p>
+        <p><code>ageGateMet: false</code> means the account hasn't reached the minimum age (<code>minAgeDays</code>, from <code>EMANCIPATION_MIN_AGE_DAYS</code>) to emancipate yet — an abuse-prevention hold on newly created custodial accounts. <code>POST /emancipate/start</code> will reject with <code>403 account_too_new</code> until <code>eligibleAt</code>.</p>
       </div>
 
       <h2 id="emancipate-start">POST /emancipate/start</h2>
@@ -765,6 +775,7 @@ aioha.signMessage(message, KeyTypes.Posting)</pre>
         <p>Decrypt and return all four private keys, plus the master password they derive from. Immediately wipes the encrypted copies from the server. Custodial accounts only. 5 req/hr. This action is irreversible.</p>
         <p>Before returning keys, verifies them against on-chain public keys to guarantee correctness.</p>
         <p><code>masterPassword</code> is the single secret all four keys derive from (importable into any Hive wallet to regenerate them). It is <code>null</code> for accounts created before master-password support.</p>
+        <p>Fails with <code>403 account_too_new</code> (see <a href="#emancipate-status">status</a> above) if the account hasn't reached the minimum hold age, or <code>403 account_disabled</code> if an admin has disabled the account.</p>
         <pre>{
   "keys": {
     "owner":   "5J...",
@@ -827,7 +838,8 @@ aioha.signMessage(message, KeyTypes.Posting)</pre>
       <h2 id="admin-stats">GET /admin/stats</h2>
       <div class="endpoint">
         <div class="endpoint-header"><span class="method method-get">GET</span><span class="endpoint-path">/admin/stats</span><span class="auth-badge auth-admin">Admin</span></div>
-        <pre>{ "actCount": 14, "pendingJobs": 2, "userCount": 387 }</pre>
+        <pre>{ "actCount": 14, "pendingJobs": 2, "userCount": 387, "incompleteOnboarding": 5, "heldAccounts": 12 }</pre>
+        <p><code>heldAccounts</code> is the count of custodial accounts still inside the emancipation hold window (see <a href="#admin-accounts">Accounts</a> below).</p>
       </div>
 
       <h2 id="admin-jobs">GET /admin/jobs</h2>
@@ -881,6 +893,41 @@ aioha.signMessage(message, KeyTypes.Posting)</pre>
       <div class="endpoint">
         <div class="endpoint-header"><span class="method method-delete">DELETE</span><span class="endpoint-path">/admin/admins/:userId</span><span class="auth-badge auth-admin">Admin</span><span class="auth-badge auth-csrf">CSRF</span></div>
         <p>Revoke admin access. Cannot demote yourself. Returns <code>{ ok: true }</code>.</p>
+      </div>
+
+      <h2 id="admin-accounts">Accounts (Abuse Review)</h2>
+      <p>Custodial accounts hold a 30-day emancipation hold by default (<code>EMANCIPATION_MIN_AGE_DAYS</code>) so admins have time to review new faucet-created accounts before the user can export keys. These endpoints back the <strong>Accounts</strong> tab in <code>/admin.html</code>.</p>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-get">GET</span><span class="endpoint-path">/admin/users?q=</span><span class="auth-badge auth-admin">Admin</span></div>
+        <p>Search accounts by Hive username (prefix match) or display name. Case-insensitive, up to 25 results.</p>
+        <pre>{ "users": [{
+  "userId": "6a272a4eac383450fbb0bc30",
+  "hiveUsername": "alice",
+  "name": "Alice",
+  "provider": "google",
+  "custodyMode": "custodial",
+  "createdAt": "2026-07-20T00:00:00.000Z",
+  "disabled": false,
+  "disabledReason": null,
+  "disabledAt": null
+}] }</pre>
+      </div>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-get">GET</span><span class="endpoint-path">/admin/held-accounts</span><span class="auth-badge auth-admin">Admin</span></div>
+        <p>Custodial accounts still inside the emancipation hold window, newest first (up to 200) — the abuse-review queue. Same shape as <code>/admin/users</code> plus <code>eligibleAt</code>.</p>
+        <pre>{ "minAgeDays": 30, "users": [{ ..., "eligibleAt": "2026-08-19T00:00:00.000Z" }] }</pre>
+      </div>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/admin/users/:userId/disable</span><span class="auth-badge auth-admin">Admin</span><span class="auth-badge auth-csrf">CSRF</span></div>
+        <p>Disable an account for abuse. The user can still log in, but every transacting endpoint (<code>/hive/*</code>, <code>/emancipate/start</code>) rejects with <code>403 account_disabled</code>.</p>
+        <table><thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+        <tbody><tr><td>reason</td><td>string</td><td>Required, 1–500 chars. Shown to the user.</td></tr></tbody></table>
+        <pre>{ "userId": "...", "disabled": true, "disabledReason": "faucet abuse", "disabledAt": "..." }</pre>
+      </div>
+      <div class="endpoint">
+        <div class="endpoint-header"><span class="method method-post">POST</span><span class="endpoint-path">/admin/users/:userId/enable</span><span class="auth-badge auth-admin">Admin</span><span class="auth-badge auth-csrf">CSRF</span></div>
+        <p>Re-enable a previously disabled account. Clears all <code>disabled*</code> fields.</p>
+        <pre>{ "userId": "...", "disabled": false, "disabledReason": null, "disabledAt": null }</pre>
       </div>
 
     </main>

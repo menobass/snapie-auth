@@ -296,6 +296,9 @@
             <div id="link-sign-section" class="hidden">
               <!-- Keychain one-tap (shown when extension is detected) -->
               <div id="keychain-cta" class="hidden">
+                <div class="alert alert-info" style="margin-bottom:12px;">
+                  <strong>Recommended.</strong> Hive Keychain signs and grants access in one click — your keys stay inside the extension and are never typed anywhere.
+                </div>
                 <button class="btn btn-primary btn-full" id="keychain-sign-btn">Sign with Hive Keychain</button>
                 <p style="text-align:center;margin-top:10px;">
                   <a href="#" id="show-manual-link" style="font-size:0.78rem;color:var(--text-3);">sign manually instead</a>
@@ -305,11 +308,19 @@
               <!-- Manual fallback -->
               <div id="manual-sign-section">
                 <div class="alert alert-info">
-                  Sign the challenge above with your Hive posting key and paste the hex signature below.
+                  Don't have <a href="https://hive-keychain.com" target="_blank" rel="noopener">Hive Keychain</a>? It's the easiest and safest way to link (one click, no keys typed). You can still link manually below.
+                </div>
+                <div class="alert alert-info">
+                  Manual linking happens entirely in your browser: your key signs the authorization locally and is used to broadcast directly to the Hive blockchain. It is never sent to or stored by Snapie's servers.
                 </div>
                 <div class="form-group">
-                  <label>Signature</label>
-                  <input type="text" id="link-signature" placeholder="hex signature…" />
+                  <label>Active Key</label>
+                  <input type="password" id="link-active-key" placeholder="5J… or STM8…" autocomplete="off" />
+                  <div class="input-hint">Your active key is needed to grant @<span id="manual-snapie-account"></span> posting access to your account — a one-time on-chain authorization. It's used only in this browser.</div>
+                </div>
+                <div class="poll-row hidden" id="manual-status-row">
+                  <div class="spinner"></div>
+                  <span id="link-manual-status"></span>
                 </div>
                 <button class="btn btn-primary btn-full" id="link-confirm-btn">Link Account</button>
               </div>
@@ -359,6 +370,7 @@
             <button class="btn btn-outline" id="go-emancipate-btn">Export Keys</button>
             <button class="btn btn-ghost" id="custodial-refresh-btn">Refresh Value</button>
           </div>
+          <p class="text-sm text-muted hidden" id="emancipate-hold-note" style="margin-top:10px"></p>
         </div>
       </div>
 
@@ -379,6 +391,25 @@
             Exporting your keys is permanent. Once exported, Snapie will no longer hold your keys. You'll need a Hive wallet (Keychain, etc.) to sign transactions.
           </p>
           <button class="btn btn-danger btn-full" id="start-emancipate-btn">Export My Keys Now</button>
+        </div>
+      </div>
+
+      <!-- STATE: Account disabled -->
+      <div id="state-disabled" class="state-panel">
+        <div class="page-header">
+          <h1>Account Disabled</h1>
+          <span class="badge badge-red">Disabled</span>
+        </div>
+
+        <div class="emancipation-warning">
+          <h3>Your account has been disabled</h3>
+          <p class="text-sm" id="disabled-reason">Please contact support for details.</p>
+        </div>
+
+        <div class="card">
+          <p class="text-sm text-muted">
+            You can still sign in, but transactions and account actions are disabled while your account is under review.
+          </p>
         </div>
       </div>
 
@@ -599,7 +630,11 @@
       }
 
       // Route to correct state
-      if (result.emancipationRequired) {
+      if (currentUser.disabled) {
+        document.getElementById('disabled-reason').textContent =
+          currentUser.disabledReason || 'Please contact support for details.'
+        showState('state-disabled')
+      } else if (result.emancipationRequired) {
         document.getElementById('emancreq-reason').textContent =
           `Your account value ($${result.accountValue?.totalUsd?.toFixed(2) || '?'}) has reached the self-custody threshold. Please export your keys to continue.`
         showState('state-emancipation-required')
@@ -789,11 +824,14 @@
         document.getElementById('challenge-box').textContent = data.challenge
         document.getElementById('challenge-box').style.display = 'block'
         document.getElementById('link-sign-section').classList.remove('hidden')
+        document.getElementById('manual-snapie-account').textContent = snapieAccount
 
         // Show Keychain button if the extension is present, otherwise show manual form
         if (window.hive_keychain) {
           document.getElementById('keychain-cta').classList.remove('hidden')
           document.getElementById('manual-sign-section').classList.add('hidden')
+        } else {
+          loadDhive().catch(() => {}) // pre-warm; real errors surface on submit
         }
       } catch (err) {
         showAlert(document.getElementById('main-alert'), err.data?.error || 'Failed to generate challenge.', 'danger')
@@ -802,10 +840,78 @@
       }
     })
 
+    // Loads the local Hive signing library on demand — only users without the
+    // Keychain extension need it, so it's not fetched on the common path.
+    let dhivePromise = null
+    function loadDhive() {
+      if (window.dhive) return Promise.resolve()
+      if (dhivePromise) return dhivePromise
+      dhivePromise = new Promise((resolve, reject) => {
+        const s = document.createElement('script')
+        s.src = '/vendor/dhive.js'
+        s.onload = () => resolve()
+        s.onerror = () => reject(new Error('Failed to load signing library'))
+        document.head.appendChild(s)
+      })
+      return dhivePromise
+    }
+
+    // Public Hive nodes used for the manual (no-Keychain) link path — reads
+    // and broadcasts happen directly from the browser to the chain, so no
+    // key or signed transaction ever passes through Snapie's server.
+    // This is a closed allowlist, not just a default: the CSP connect-src
+    // in src/index.js only permits fetches to these exact origins (plus the
+    // beacon below), so any domain added here must be added there too.
+    const HIVE_NODE_ALLOWLIST = ['https://api.hive.blog', 'https://api.deathwing.me', 'https://api.openhive.network', 'https://techcoderx.com', 'https://api.syncad.com', 'https://hiveapi.actifit.io', 'https://api.c0ff33a.uk', 'https://rpc.mahdiyari.info']
+
+    // PeakD's node beacon (https://beacon.peakd.com) continuously health-checks
+    // public Hive nodes. It's used only to rank/filter within our own
+    // allowlist above — never to introduce a node we haven't vetted, since
+    // that would mean sending a user's signed transaction wherever a
+    // third-party API points us.
+    async function getHiveNodeList() {
+      try {
+        const res = await fetch('https://beacon.peakd.com/api/nodes', { cache: 'no-store' })
+        if (!res.ok) throw new Error('beacon unavailable')
+        const nodes = await res.json()
+        const healthy = nodes
+          .filter(n => HIVE_NODE_ALLOWLIST.includes(n.endpoint) && n.score >= 90 && Array.isArray(n.features) && n.features.includes('broadcast'))
+          .sort((a, b) => b.score - a.score)
+          .map(n => n.endpoint)
+        if (healthy.length >= 2) return healthy
+      } catch { /* beacon unreachable — fall through to full allowlist */ }
+      return HIVE_NODE_ALLOWLIST
+    }
+
+    let dhiveApiClient = null
+    async function getDhiveClient() {
+      if (!dhiveApiClient) {
+        const nodes = await getHiveNodeList()
+        dhiveApiClient = new dhive.Client(nodes, { timeout: 4000, failoverThreshold: 3 })
+      }
+      return dhiveApiClient
+    }
+
+    // dhive/hived broadcast errors are wrapped JSON-RPC error objects; pull
+    // out the human-readable chain message when present. Node-failover and
+    // raw network failures are translated to plain language — the original
+    // message dumps node URLs and retry-round counts, which reads as
+    // meaningless noise to non-technical users.
+    function dhiveErrMsg(err) {
+      if (!err) return null
+      const raw = err.message || String(err)
+      if (/nodes failed after/i.test(raw) || /failed to fetch/i.test(raw) || /networkerror/i.test(raw)) {
+        return "Couldn't reach the Hive network just now. Please check your connection and try again in a moment."
+      }
+      const m = raw.match(/"message":"([^"]+)"/)
+      return m ? m[1] : raw.slice(0, 200)
+    }
+
     document.getElementById('show-manual-link').addEventListener('click', e => {
       e.preventDefault()
       document.getElementById('keychain-cta').classList.add('hidden')
       document.getElementById('manual-sign-section').classList.remove('hidden')
+      loadDhive().catch(() => {}) // pre-warm; real errors surface on submit
     })
 
     document.getElementById('keychain-sign-btn').addEventListener('click', () => {
@@ -863,10 +969,62 @@
     document.getElementById('link-confirm-btn').addEventListener('click', async () => {
       const btn = document.getElementById('link-confirm-btn')
       const username = document.getElementById('link-username-input').value.trim()
-      const signature = document.getElementById('link-signature').value.trim()
-      if (!username || !signature || !challengeText) return
+      const keyInput = document.getElementById('link-active-key')
+      const activeKeyStr = keyInput.value.trim()
+      const statusRow = document.getElementById('manual-status-row')
+      const statusText = document.getElementById('link-manual-status')
+      if (!username || !activeKeyStr || !challengeText || !snapieAccount) return
       setLoading(btn, true)
+      statusRow.classList.remove('hidden')
       try {
+        await loadDhive()
+        let key
+        try {
+          key = dhive.PrivateKey.fromString(activeKeyStr)
+        } catch {
+          throw { data: { error: "That doesn't look like a valid Hive private key." } }
+        }
+
+        statusText.textContent = 'Finding a healthy Hive node…'
+        const chain = await getDhiveClient()
+
+        // Step 1: check whether @snapie already has posting authority —
+        // skip the grant broadcast if a previous attempt already succeeded.
+        statusText.textContent = 'Checking your account…'
+        const [account] = await chain.database.getAccounts([username])
+        if (!account) throw { data: { error: 'Hive account not found.' } }
+
+        const alreadyGranted = account.posting.account_auths.some(([acc]) => acc === snapieAccount)
+        if (!alreadyGranted) {
+          // Step 2: grant posting authority to @snapie by broadcasting
+          // account_update2 with the existing posting authority plus
+          // @snapie appended (Hive requires account_auths sorted by name).
+          statusText.textContent = 'Granting posting access (broadcasting to Hive)…'
+          const newAccountAuths = [...account.posting.account_auths, [snapieAccount, 1]]
+            .sort((a, b) => a[0].localeCompare(b[0]))
+
+          await chain.broadcast.sendOperations([
+            ['account_update2', {
+              account: username,
+              posting: {
+                weight_threshold: account.posting.weight_threshold,
+                account_auths: newAccountAuths,
+                key_auths: account.posting.key_auths
+              },
+              memo_key: account.memo_key,
+              json_metadata: account.json_metadata || '',
+              posting_json_metadata: account.posting_json_metadata || '',
+              extensions: []
+            }]
+          ], key)
+
+          statusText.textContent = 'Confirming on-chain…'
+          await new Promise(r => setTimeout(r, 4000))
+        }
+
+        // Step 3: sign the ownership challenge and confirm the link.
+        statusText.textContent = 'Linking account…'
+        const signature = key.sign(dhive.cryptoUtils.sha256(challengeText)).toString()
         await api('POST', '/link/confirm', { username, signature, challenge: challengeText })
         const me = await checkAuth()
         if (me?.user) {
@@ -875,8 +1033,11 @@
           showState('state-emancipated')
         }
       } catch (err) {
-        showAlert(document.getElementById('main-alert'), err.data?.error || 'Link failed. Check your signature.', 'danger')
+        showAlert(document.getElementById('main-alert'), err.data?.error || dhiveErrMsg(err) || 'Link failed. Check your active key.', 'danger')
         setLoading(btn, false)
+        statusRow.classList.add('hidden')
+      } finally {
+        keyInput.value = '' // never keep the key around longer than needed
       }
     })
 
@@ -889,6 +1050,22 @@
         document.getElementById('custodial-value').textContent = formatUsd(data.totalValueUsd)
       } catch {
         document.getElementById('custodial-value').textContent = '—'
+      }
+
+      const exportBtn = document.getElementById('go-emancipate-btn')
+      const note = document.getElementById('emancipate-hold-note')
+      try {
+        const status = await api('GET', '/emancipate/status')
+        if (!status.ageGateMet) {
+          exportBtn.disabled = true
+          note.textContent = `Key export is available starting ${new Date(status.eligibleAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}.`
+          note.classList.remove('hidden')
+        } else {
+          exportBtn.disabled = false
+          note.classList.add('hidden')
+        }
+      } catch {
+        // non-fatal — leave the button enabled, server enforces the gate regardless
       }
     }
 
@@ -917,7 +1094,14 @@
         document.getElementById('emancipate-keys-display').classList.remove('hidden')
         btn.closest('.card').style.display = 'none'
       } catch (err) {
-        showAlert(document.getElementById('emancipate-alert'), err.data?.error || 'Failed to export keys.', 'danger')
+        let msg = err.data?.error || 'Failed to export keys.'
+        if (err.data?.error === 'account_too_new') {
+          const eligible = new Date(err.data.eligibleAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+          msg = `Key export isn't available yet for accounts this new. Available starting ${eligible}.`
+        } else if (err.data?.error === 'account_disabled') {
+          msg = err.data.reason ? `Account disabled: ${err.data.reason}` : 'This account has been disabled.'
+        }
+        showAlert(document.getElementById('emancipate-alert'), msg, 'danger')
         setLoading(btn, false)
       }
     })
