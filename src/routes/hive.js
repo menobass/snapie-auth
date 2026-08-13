@@ -12,7 +12,7 @@ import { ObjectId } from 'mongodb'
 const router = Router()
 
 const POSTING_OPS = new Set([
-  'vote', 'comment', 'delete_comment', 'custom_json', 'claim_reward_balance',
+  'vote', 'comment', 'comment_options', 'delete_comment', 'custom_json', 'claim_reward_balance',
   'account_update2'
 ])
 
