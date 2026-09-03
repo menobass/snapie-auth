@@ -408,9 +408,12 @@ router.post('/claim-rewards', authMiddleware, csrfMiddleware, asyncMw(async (req
 }))
 
 // POST /api/hive/sign-message
-// Signs a challenge/message with the user's Hive posting key.
-// Custodial: server decrypts and signs silently.
-// Emancipated: returns { needsClientSigning: true } — client signs via Keychain/AIOha.
+// Signs a challenge/message with a posting-level key.
+// Custodial: server decrypts and signs with the user's own posting key.
+// Emancipated: the user's individual key is no longer in custody, but posting
+// authority is still delegated to @snapie on-chain (same as /broadcast above,
+// which every emancipated user already relies on for posting/voting/etc.), so
+// sign with @snapie's own posting key rather than bouncing to client signing.
 router.post('/sign-message', authMiddleware, csrfMiddleware, asyncMw(async (req, res) => {
   const user = await getUserById(req.user.userId)
   if (!user || !user.hiveUsername) {
@@ -427,7 +430,12 @@ router.post('/sign-message', authMiddleware, csrfMiddleware, asyncMw(async (req,
   }
 
   if (user.custodyMode === 'emancipated') {
-    return res.json({ needsClientSigning: true, message, account: user.hiveUsername, keyType: 'posting' })
+    try {
+      const signature = signMessage(message, process.env.SNAPIE_POSTING_KEY)
+      return res.json({ signature, account: user.hiveUsername })
+    } catch {
+      return res.status(500).json({ error: 'signing_failed' })
+    }
   }
 
   if (user.custodyMode !== 'custodial') {
