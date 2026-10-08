@@ -89,6 +89,7 @@ const rl = (windowMs, max) => rateLimit({
 })
 
 const authLimiter     = rl(15 * 60 * 1000,  30)   // 30/15min
+const meLimiter       = rl(60 * 1000,       120)   // 120/min
 const resendLimiter   = rl(60 * 60 * 1000,  5)    // 5/hr
 const createLimiter   = rl(60 * 60 * 1000,  5)    // 5/hr
 const checkLimiter    = rl(60 * 1000,        40)   // 40/min
@@ -100,7 +101,10 @@ const licenseLimiter  = rl(60 * 1000,        10)   // 10/min
 
 // ── Routes ────────────────────────────────────────────────────
 app.use('/api/auth/email/resend',      resendLimiter)
-app.use('/api/auth',                  authLimiter, authRoutes)
+// /me is a cheap session probe that pages poll on every load; it must not
+// drain the login bucket. Only credential-bearing endpoints use authLimiter.
+app.use('/api/auth/me',               meLimiter)
+app.use('/api/auth',                  (req, res, next) => req.path === '/me' ? next() : authLimiter(req, res, next), authRoutes)
 app.use('/api/account/create',        createLimiter)
 app.use('/api/account/check-username',checkLimiter)
 app.use('/api/account',              accountRoutes)
