@@ -359,3 +359,26 @@ The reconcile loop runs every `ACCOUNT_RECONCILE_INTERVAL_MS` ms (default 5000).
 - All state-mutating API calls require a CSRF double-submit token
 - `KEY_ENCRYPTION_PEPPER` must never change after first deploy — doing so makes all custodial keys unrecoverable
 - The `INTERNAL_API_KEY` is compared with `crypto.timingSafeEqual` to prevent timing attacks
+
+## Sign in with Snapie (third-party apps)
+
+Lets a registered app (web or native) authenticate users through Snapie without handling Hive
+keys. Configure `APP_LOGIN_CLIENTS` and generate the app keypair with `bash scripts/gen-app-keys.sh` (see `.env.example`).
+
+1. App sends the user to `https://auth.snapie.io/login?client=<id>&redirect=<registered url>&state=<nonce>`
+   (`state`: 16-128 chars `[A-Za-z0-9_-]`, generated and remembered by the app).
+2. User signs in; Snapie redirects to `redirect` with `token` and `state` (https: in the URL
+   fragment; custom schemes: query parameters), or `error`.
+3. The app's backend verifies the token and checks `nonce === state` (single use):
+
+| Claim | Meaning |
+|---|---|
+| `iss` | `APP_JWT_ISSUER` (default `https://auth.snapie.io`) |
+| `aud` | the client id — reject if it isn't yours |
+| `sub` | stable Snapie user id — use this as the user key |
+| `name`, `hive_user` | display name; Hive account if one exists (otherwise `null`) |
+| `nonce` | the `state` you sent |
+| `exp` | 120 seconds after issue |
+
+Keys: `GET /.well-known/jwks.json` (RS256, rotate via `kid`). These tokens use a different key than
+Snapie sessions and cannot be used as one.

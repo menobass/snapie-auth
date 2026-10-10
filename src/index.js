@@ -20,6 +20,8 @@ import adminRoutes from './routes/admin.js'
 import internalRoutes from './routes/internal.js'
 import paymentRoutes from './routes/payment.js'
 import licenseRoutes from './routes/license.js'
+import appLoginRoutes from './routes/app-login.js'
+import { jwks } from './services/app-tokens.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const PUBLIC_DIR = join(__dirname, '..', 'public')
@@ -125,6 +127,12 @@ app.use('/api/internal',             internalRoutes)
 app.use('/api/payment',              paymentRoutes)
 app.use('/api/license/activate',     licenseLimiter)
 app.use('/api/license',              licenseRoutes)
+app.use('/api/app-login',            licenseLimiter, appLoginRoutes)
+
+// Public keys apps use to verify tokens from /api/app-login/token
+app.get('/.well-known/jwks.json', (_req, res) => {
+  res.set('Cache-Control', 'public, max-age=300').json(jwks())
+})
 
 // Plugin-licensing redirect entry point — see internal-docs/HANDOFF_SNAPIE_REDIRECT.md
 // (login-callback.html is served directly by express.static below, like manage.html/docs.html)

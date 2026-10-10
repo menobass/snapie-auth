@@ -84,6 +84,30 @@ export async function completeLicenseActivation(pending) {
   redirectWithLicenseResult(pending, result)
 }
 
+// App sign-in ("Sign in with Snapie" for registered third-party apps).
+// Web (https) redirects get the token in the fragment so it never reaches server logs;
+// native deep links get it as a query parameter.
+export function redirectWithAppResult({ redirect, state }, result) {
+  const url = new URL(redirect)
+  const params = new URLSearchParams({ state })
+  if (result.token) params.set('token', result.token)
+  else params.set('error', result.error || 'request_failed')
+  sessionStorage.removeItem('snapie_app_pending')
+  if (url.protocol === 'https:') url.hash = params.toString()
+  else params.forEach((v, k) => url.searchParams.set(k, v))
+  window.location.href = url.toString()
+}
+
+export async function completeAppLogin(pending) {
+  let result
+  try {
+    result = await api('POST', '/app-login/token', { client: pending.client, redirect: pending.redirect, state: pending.state })
+  } catch (err) {
+    result = { error: err.data?.error || 'request_failed' }
+  }
+  redirectWithAppResult(pending, result)
+}
+
 export function setLoading(btn, loading) {
   if (loading) {
     btn.dataset.originalText = btn.innerHTML
