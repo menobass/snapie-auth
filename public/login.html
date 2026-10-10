@@ -96,9 +96,10 @@
   </footer>
 
   <script type="module">
-    import { getPublicConfig, showAlert, checkAuth, completeLicenseActivation } from '/auth.js'
+    import { api, getPublicConfig, showAlert, checkAuth, completeLicenseActivation, completeAppLogin } from '/auth.js'
 
     const PENDING_KEY = 'snapie_license_pending'
+    const APP_PENDING_KEY = 'snapie_app_pending'
 
     function isAllowedRedirect(redirectUrl, allowedHosts) {
       let url
@@ -113,6 +114,42 @@
       const redirect = params.get('redirect')
       const plugin = params.get('plugin')
       const machine = params.get('machine')
+      const appClient = params.get('client')
+      const appState = params.get('state')
+
+      // "Sign in with Snapie" for registered apps: ?client=<id>&redirect=<url>&state=<nonce>
+      if (appClient) {
+        let info
+        try {
+          info = await api('GET', `/app-login/client?id=${encodeURIComponent(appClient)}&redirect=${encodeURIComponent(redirect || '')}`)
+        } catch {
+          showAlert(statusArea, 'This sign-in link points to an untrusted destination.', 'danger')
+          return
+        }
+        if (!/^[A-Za-z0-9_-]{16,128}$/.test(appState || '')) {
+          showAlert(statusArea, 'This sign-in link is missing required parameters.', 'danger')
+          return
+        }
+        document.querySelector('.auth-card h1').textContent = `Sign in to ${info.name}`
+        document.querySelector('.auth-card p').textContent = 'Continue with your Google account. No wallet or crypto knowledge needed.'
+        const pending = { client: appClient, redirect, state: appState }
+        sessionStorage.removeItem(PENDING_KEY)
+        sessionStorage.setItem(APP_PENDING_KEY, JSON.stringify(pending))
+        const me = await checkAuth()
+        if (me?.user) { await completeAppLogin(pending); return }
+        const acfg = await getPublicConfig().catch(() => ({}))
+        document.getElementById('auth-main').style.display = 'block'
+        document.getElementById('google-btn').addEventListener('click', () => {
+          window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${new URLSearchParams({
+            client_id: acfg.googleClientId,
+            redirect_uri: window.location.origin + '/login-callback.html',
+            response_type: 'token id_token',
+            scope: 'openid email profile',
+            nonce: crypto.randomUUID()
+          })}`
+        })
+        return
+      }
 
       if (!redirect || !plugin || !machine) {
         showAlert(statusArea, 'This sign-in link is missing required parameters.', 'danger')
@@ -138,6 +175,7 @@
       pluginTag.textContent = plugin
       pluginTag.style.display = 'inline-block'
 
+      sessionStorage.removeItem(APP_PENDING_KEY)
       sessionStorage.setItem(PENDING_KEY, JSON.stringify({ redirect, plugin, machine }))
 
       // Already signed in (existing snapieauth_session cookie) — skip the

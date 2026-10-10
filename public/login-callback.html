@@ -17,7 +17,7 @@
   </div>
 
   <script type="module">
-    import { api, completeLicenseActivation, redirectWithLicenseResult } from '/auth.js'
+    import { api, completeLicenseActivation, redirectWithLicenseResult, completeAppLogin, redirectWithAppResult } from '/auth.js'
 
     const PENDING_KEY = 'snapie_license_pending'
 
@@ -27,7 +27,9 @@
 
     async function init() {
       const statusText = document.getElementById('status-text')
-      const pending = readPending()
+      let appPending = null
+      try { appPending = JSON.parse(sessionStorage.getItem('snapie_app_pending') || 'null') } catch {}
+      const pending = appPending || readPending()
 
       // This page only ever expects to be reached via the /login plugin-licensing
       // flow. If there's no pending request, something went wrong upstream —
@@ -44,7 +46,8 @@
 
       if (!idToken) {
         statusText.textContent = 'Sign-in failed.'
-        redirectWithLicenseResult(pending, { status: 'error', error: 'google_signin_failed' })
+        if (appPending) redirectWithAppResult(pending, { error: 'google_signin_failed' })
+        else redirectWithLicenseResult(pending, { status: 'error', error: 'google_signin_failed' })
         return
       }
 
@@ -54,7 +57,14 @@
         await api('POST', '/auth/google', { credential: idToken })
       } catch {
         statusText.textContent = 'Sign-in failed.'
-        redirectWithLicenseResult(pending, { status: 'error', error: 'google_signin_failed' })
+        if (appPending) redirectWithAppResult(pending, { error: 'google_signin_failed' })
+        else redirectWithLicenseResult(pending, { status: 'error', error: 'google_signin_failed' })
+        return
+      }
+
+      if (appPending) {
+        statusText.textContent = 'Signing you in...'
+        await completeAppLogin(pending)
         return
       }
 
