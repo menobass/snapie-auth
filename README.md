@@ -382,3 +382,19 @@ keys. Configure `APP_LOGIN_CLIENTS` and generate the app keypair with `bash scri
 
 Keys: `GET /.well-known/jwks.json` (RS256, rotate via `kid`). These tokens use a different key than
 Snapie sessions and cannot be used as one.
+### Native Sign in with Apple (iOS apps)
+
+An app that shows Google login must also offer Sign in with Apple (App Store guideline 4.8). Native iOS
+apps skip the browser step and exchange Apple's identity token for the same app token:
+
+1. Add the app's bundle ID to its client: `"apple":["com.example.myapp"]` in `APP_LOGIN_CLIENTS`.
+2. The app creates `state` as above and starts `ASAuthorizationAppleIDRequest` with
+   `nonce = hex(sha256(state))`.
+3. `POST /api/app-login/apple {client, identityToken, state, name?}` (`name`: `{firstName, lastName}`,
+   which Apple only provides on the first authorization) returns `{status:"ok", token}`: the same
+   RS256 token as `/api/app-login/token`, verified the same way.
+
+The identity token must carry `nonce == hex(sha256(state))`, so it only works for the login attempt it was
+created for. No session or cookie is set. Apple user ids are scoped to the developer team: the same
+person signing in to apps from two different teams becomes two Snapie users.
+

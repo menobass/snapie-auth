@@ -1,10 +1,13 @@
 // "Sign in with Snapie" for registered third-party apps (web + native).
 // Clients come from APP_LOGIN_CLIENTS (JSON), e.g.
-//   {"iot":{"name":"Hive IoT","redirects":["https://iot.menosoft.xyz/auth/callback","menoiot://auth"]}}
-// The client id doubles as the token audience.
+//   {"iot":{"name":"Flex IOT","redirects":["https://iot.example.com/auth/callback","myapp://auth"],
+//           "apple":["com.example.myapp"]}}
+// The client id doubles as the token audience. `apple` lists the iOS bundle IDs (or Services IDs)
+// allowed as the audience of a native Sign in with Apple identity token for this client.
 
 const CLIENT_ID = /^[a-z0-9_-]{1,32}$/i
 const STATE = /^[A-Za-z0-9_-]{16,128}$/
+const APPLE_AUDIENCE = /^[A-Za-z0-9.-]{1,155}$/
 const FORBIDDEN_SCHEMES = ['http:', 'javascript:', 'data:', 'file:', 'blob:', 'about:', 'vbscript:']
 
 function parseRedirect(value) {
@@ -24,7 +27,9 @@ export function loadClients(raw = process.env.APP_LOGIN_CLIENTS) {
     if (!CLIENT_ID.test(id)) continue
     const redirects = (Array.isArray(c?.redirects) ? c.redirects : []).filter(r => typeof r === 'string' && parseRedirect(r))
     if (!redirects.length) continue
-    clients[id] = { id, name: String(c.name || id).slice(0, 64), redirects }
+    const apple = (Array.isArray(c.apple) ? c.apple : c.apple ? [c.apple] : [])
+      .filter(a => typeof a === 'string' && APPLE_AUDIENCE.test(a))
+    clients[id] = { id, name: String(c.name || id).slice(0, 64), redirects, apple }
   }
   return clients
 }
