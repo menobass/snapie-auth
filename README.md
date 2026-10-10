@@ -398,3 +398,17 @@ The identity token must carry `nonce == hex(sha256(state))`, so it only works fo
 created for. No session or cookie is set. Apple user ids are scoped to the developer team: the same
 person signing in to apps from two different teams becomes two Snapie users.
 
+### Native Google sign-in (Android and iOS apps)
+
+Same idea without a browser: the app gets a Google ID token from Credential Manager (Android) or the
+Google Sign-In SDK (iOS) and trades it for the app token.
+
+1. Add the Google OAuth client ID the app passes to Google as the server/web client ID:
+   `"google":["1234-abc.apps.googleusercontent.com"]` in `APP_LOGIN_CLIENTS`.
+2. The app creates `state` as above and requests the ID token with `nonce = hex(sha256(state))`.
+3. `POST /api/app-login/google {client, idToken, state}` returns `{status:"ok", token}`: the same RS256 token
+   as `/api/app-login/token`.
+
+The token is verified locally against Google's keys, and its `nonce` must equal `hex(sha256(state))`. A
+person is the same Snapie user here as in web Google login (same Google `sub`).
+
