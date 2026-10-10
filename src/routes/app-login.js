@@ -5,6 +5,7 @@ import { csrfMiddleware } from '../services/csrf.js'
 import crypto from 'crypto'
 import { getUserById, upsertUser, hashEmail } from '../services/users.js'
 import { verifyAppleIdentityToken } from '../services/apple.js'
+import { verifyGoogleIdToken } from '../services/google.js'
 import { getClient, isAllowedRedirect, isValidState } from '../services/app-login.js'
 import { isConfigured, mintAppToken } from '../services/app-tokens.js'
 
@@ -65,6 +66,39 @@ router.post('/apple', asyncMw(async (req, res) => {
     emailHash: email ? hashEmail(email) : null,
     name: parts.length ? parts.join(' ').slice(0, 64) : null,
     picture: null,
+    emailVerified: true
+  })
+  if (user.disabled) return res.status(403).json({ status: 'error', error: 'account_disabled' })
+
+  res.json({ status: 'ok', token: mintAppToken({ client, user, state }) })
+}))
+
+// POST /api/app-login/google  { client, idToken, state }
+// Native Google sign-in (Android Credential Manager / iOS Google Sign-In) -> the same app token as
+// /token, no browser. The client must list its Google OAuth client ID(s) under `google`. The ID token
+// must carry nonce = sha256_hex(state), tying it to this one login attempt. The Google account `sub`
+// is the same one /api/auth/google uses, so a person is the same Snapie user on web and in the app.
+router.post('/google', asyncMw(async (req, res) => {
+  if (!isConfigured()) return res.status(503).json({ status: 'error', error: 'app_login_not_configured' })
+  const { client: clientId, idToken, state } = req.body || {}
+  const client = getClient(clientId)
+  if (!client) return res.status(400).json({ status: 'error', error: 'invalid_client' })
+  if (!client.google.length) return res.status(400).json({ status: 'error', error: 'google_not_enabled' })
+  if (!isValidState(state)) return res.status(400).json({ status: 'error', error: 'invalid_state' })
+  if (typeof idToken !== 'string' || idToken.length > 4096)
+    return res.status(400).json({ status: 'error', error: 'idToken required' })
+
+  const google = await verifyGoogleIdToken(idToken, client.google)
+  const expectedNonce = crypto.createHash('sha256').update(state).digest('hex')
+  if (!google || google.nonce !== expectedNonce) return res.status(401).json({ status: 'error', error: 'invalid_credential' })
+
+  const email = google.email_verified && typeof google.email === 'string' ? google.email : null
+  const user = await upsertUser({
+    provider: 'google',
+    providerId: google.sub,
+    emailHash: email ? hashEmail(email) : null,
+    name: typeof google.name === 'string' && google.name ? google.name.slice(0, 64) : null,
+    picture: typeof google.picture === 'string' ? google.picture : null,
     emailVerified: true
   })
   if (user.disabled) return res.status(403).json({ status: 'error', error: 'account_disabled' })
