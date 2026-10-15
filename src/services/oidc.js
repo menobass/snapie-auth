@@ -17,22 +17,30 @@ export function makeOidcVerifier({ keysUrl, issuers }) {
     return cache
   }
 
-  // -> verified payload, or null if the token is not valid for one of `audiences`
-  async function verify(idToken, audiences) {
-    if (typeof idToken !== 'string' || !audiences?.length) return null
+  // -> verified payload, or null if the token is not valid for one of `audiences`.
+  // `onFail(reason, info)` (optional) is told why a token was refused. `info` only ever carries
+  // non-secret claims (aud, iss, exp) and the verifier's error message, never the token itself.
+  async function verify(idToken, audiences, onFail = () => {}) {
+    if (typeof idToken !== 'string' || !audiences?.length) { onFail('no_token_or_audience'); return null }
     let header
-    try { header = JSON.parse(Buffer.from(idToken.split('.')[0], 'base64url').toString()) } catch { return null }
+    try { header = JSON.parse(Buffer.from(idToken.split('.')[0], 'base64url').toString()) } catch { onFail('malformed_token'); return null }
 
     let jwk = (await providerKeys()).find(k => k.kid === header.kid)
     if (!jwk) jwk = (await providerKeys(true)).find(k => k.kid === header.kid) // provider rotated keys
-    if (!jwk) return null
+    if (!jwk) { onFail('unknown_key', { kid: header.kid }); return null }
 
     try {
       const payload = jwt.verify(idToken, crypto.createPublicKey({ key: jwk, format: 'jwk' }), {
         algorithms: ['RS256'], issuer: issuers, audience: audiences
       })
-      return payload.sub ? payload : null
-    } catch { return null }
+      if (!payload.sub) { onFail('no_subject'); return null }
+      return payload
+    } catch (err) {
+      let claims = {}
+      try { claims = jwt.decode(idToken) || {} } catch { /* not decodable */ }
+      onFail('verify_failed', { error: err.message, aud: claims.aud, iss: claims.iss, exp: claims.exp })
+      return null
+    }
   }
 
   return { verify, reset() { cache = null; cachedAt = 0 } }

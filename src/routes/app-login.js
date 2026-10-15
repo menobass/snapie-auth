@@ -11,6 +11,23 @@ import { isConfigured, mintAppToken } from '../services/app-tokens.js'
 
 const router = Router()
 
+// Failed native sign-ins leave a one-line trace (provider, client, reason) so integrators can be
+// helped. Never logs the token, the state or the nonce value.
+function logFailure(provider, req, clientId, reason, info = {}) {
+  console.warn(`[app-login] ${provider} refused: ${JSON.stringify({ client: clientId, reason, ip: req.ip, ...info })}`)
+}
+
+// Classifies a wrong nonce without logging either value.
+function nonceDiagnosis(claim, state) {
+  if (typeof claim !== 'string') return 'missing'
+  if (claim === state) return 'raw_state'
+  const want = crypto.createHash('sha256').update(state).digest()
+  if (claim.toLowerCase() === want.toString('hex')) return 'uppercase_hex'
+  if (claim === want.toString('base64') || claim === want.toString('base64url')) return 'base64'
+  if (claim === crypto.createHash('sha256').update(want.toString('hex')).digest('hex')) return 'hashed_twice'
+  return 'other'
+}
+
 // GET /api/app-login/client?id=iot&redirect=...
 // Lets login.html show the app name and refuse untrusted redirects before the user signs in.
 router.get('/client', (req, res) => {
@@ -53,9 +70,13 @@ router.post('/apple', asyncMw(async (req, res) => {
   if (typeof identityToken !== 'string' || identityToken.length > 4096)
     return res.status(400).json({ status: 'error', error: 'identityToken required' })
 
-  const apple = await verifyAppleIdentityToken(identityToken, client.apple)
+  let failed = false
+  const apple = await verifyAppleIdentityToken(identityToken, client.apple, (reason, info) => { failed = true; logFailure('apple', req, clientId, reason, info) })
   const expectedNonce = crypto.createHash('sha256').update(state).digest('hex')
-  if (!apple || apple.nonce !== expectedNonce) return res.status(401).json({ status: 'error', error: 'invalid_credential' })
+  if (!apple || apple.nonce !== expectedNonce) {
+    if (!failed) logFailure('apple', req, clientId, 'nonce_mismatch', { nonce: nonceDiagnosis(apple?.nonce, state) })
+    return res.status(401).json({ status: 'error', error: 'invalid_credential' })
+  }
 
   // Apple sends the name only on the very first authorization, and only the app sees it.
   const parts = name && typeof name === 'object' ? [name.firstName, name.lastName].filter(v => typeof v === 'string' && v) : []
@@ -68,7 +89,10 @@ router.post('/apple', asyncMw(async (req, res) => {
     picture: null,
     emailVerified: true
   })
-  if (user.disabled) return res.status(403).json({ status: 'error', error: 'account_disabled' })
+  if (user.disabled) {
+    logFailure('apple', req, clientId, 'account_disabled')
+    return res.status(403).json({ status: 'error', error: 'account_disabled' })
+  }
 
   res.json({ status: 'ok', token: mintAppToken({ client, user, state }) })
 }))
@@ -88,9 +112,13 @@ router.post('/google', asyncMw(async (req, res) => {
   if (typeof idToken !== 'string' || idToken.length > 4096)
     return res.status(400).json({ status: 'error', error: 'idToken required' })
 
-  const google = await verifyGoogleIdToken(idToken, client.google)
+  let failed = false
+  const google = await verifyGoogleIdToken(idToken, client.google, (reason, info) => { failed = true; logFailure('google', req, clientId, reason, info) })
   const expectedNonce = crypto.createHash('sha256').update(state).digest('hex')
-  if (!google || google.nonce !== expectedNonce) return res.status(401).json({ status: 'error', error: 'invalid_credential' })
+  if (!google || google.nonce !== expectedNonce) {
+    if (!failed) logFailure('google', req, clientId, 'nonce_mismatch', { nonce: nonceDiagnosis(google?.nonce, state) })
+    return res.status(401).json({ status: 'error', error: 'invalid_credential' })
+  }
 
   const email = google.email_verified && typeof google.email === 'string' ? google.email : null
   const user = await upsertUser({
@@ -101,7 +129,10 @@ router.post('/google', asyncMw(async (req, res) => {
     picture: typeof google.picture === 'string' ? google.picture : null,
     emailVerified: true
   })
-  if (user.disabled) return res.status(403).json({ status: 'error', error: 'account_disabled' })
+  if (user.disabled) {
+    logFailure('google', req, clientId, 'account_disabled')
+    return res.status(403).json({ status: 'error', error: 'account_disabled' })
+  }
 
   res.json({ status: 'ok', token: mintAppToken({ client, user, state }) })
 }))
