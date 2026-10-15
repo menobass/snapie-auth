@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { asyncMw } from '../services/async-middleware.js'
-import { authMiddleware } from '../services/auth.js'
+import { authMiddleware, SESSION_COOKIE } from '../services/auth.js'
 import { csrfMiddleware } from '../services/csrf.js'
 import crypto from 'crypto'
 import { getUserById, upsertUser, hashEmail } from '../services/users.js'
@@ -16,6 +16,23 @@ const router = Router()
 function logFailure(provider, req, clientId, reason, info = {}) {
   console.warn(`[app-login] ${provider} refused: ${JSON.stringify({ client: clientId, reason, ip: req.ip, ...info })}`)
 }
+
+// One line for every 4xx/5xx this router sends, including rejections by the session and CSRF
+// middleware that run before a handler can log anything. Records which credentials were present,
+// never their values.
+router.use((req, res, next) => {
+  let error
+  const json = res.json.bind(res)
+  res.json = (body) => { error = body?.error; return json(body) }
+  res.on('finish', () => {
+    if (res.statusCode < 400) return
+    console.warn(`[app-login] ${req.method} ${req.path} -> ${res.statusCode}: ${JSON.stringify({
+      error, client: typeof req.body?.client === 'string' ? req.body.client.slice(0, 32) : undefined,
+      cookie: Boolean(req.cookies?.[SESSION_COOKIE]), bearer: Boolean(req.headers.authorization), ip: req.ip
+    })}`)
+  })
+  next()
+})
 
 // Classifies a wrong nonce without logging either value.
 function nonceDiagnosis(claim, state) {
